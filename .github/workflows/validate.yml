@@ -1,0 +1,19 @@
+name: Validate PediGuardian
+
+on:
+  push:
+    branches: ["main", "release/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate repository contents
+        run: |
+          test -f cloud/supabase/functions/telegram-webhook-v47/index.ts
+          grep -q 'const VERSION = "4.7.0"' cloud/supabase/functions/telegram-webhook-v47/index.ts
+          grep -q 'telegram_updates' cloud/supabase/functions/telegram-webhook-v47/index.ts
+          echo 'PediGuardian repository validation passed'
