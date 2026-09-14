@@ -1,0 +1,54 @@
+name: Sync PediGuardian 4.7.1 Artifact
+
+on:
+  push:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/sync-4.7.1-artifact.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Download verified 4.7.1 JAR
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p PediGuardianJava/release
+          curl -fsSL --retry 3 \
+            'https://raw.githubusercontent.com/hoseinsoltanzadeh1985-hue/Simorgh/main/pedi-guardian-java-4.7.1.jar' \
+            -o PediGuardianJava/release/pedi-guardian-java-4.7.1.jar
+          echo '83d0f03cdf1cd8fd9b4a2a64bcac1966a5377f930aa68811d9f80da472ad6e9a  PediGuardianJava/release/pedi-guardian-java-4.7.1.jar' | sha256sum -c -
+
+      - name: Download verified 4.7.1 source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p PediGuardianJava/source
+          curl -fsSL --retry 3 \
+            'https://raw.githubusercontent.com/hoseinsoltanzadeh1985-hue/Simorgh/main/Simorgh-PediGuardian-4.7.1-clean-update.zip' \
+            -o PediGuardianJava/source/PediGuardianJava-4.7.1-source.zip
+          echo '688d4ab294b99674b238ed5c6268e6be89ff3432de131525d77c6d2dadc83078  PediGuardianJava/source/PediGuardianJava-4.7.1-source.zip' | sha256sum -c -
+
+      - name: Commit release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add PediGuardianJava/release/pedi-guardian-java-4.7.1.jar PediGuardianJava/source/PediGuardianJava-4.7.1-source.zip
+          if git diff --cached --quiet; then
+            echo 'Artifacts already synchronized.'
+            exit 0
+          fi
+          git commit -m 'release: add PediGuardian Java 4.7.1 artifacts'
+          git push
