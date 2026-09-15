@@ -31,7 +31,11 @@ jobs:
             'https://raw.githubusercontent.com/hoseinsoltanzadeh1985-hue/Simorgh/main/Simorgh-PediGuardian-4.7.1-clean-update.zip' \
             -o source.zip
           echo '688d4ab294b99674b238ed5c6268e6be89ff3432de131525d77c6d2dadc83078  source.zip' | sha256sum -c -
-          unzip -q source.zip
+          rm -rf source_bundle
+          mkdir -p source_bundle
+          unzip -q source.zip -d source_bundle
+          rm -rf PediGuardianJava/source
+          cp -a source_bundle/PediGuardianJava/source PediGuardianJava/source
 
       - name: Apply deterministic 4.7.4 patch
         shell: bash
