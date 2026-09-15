@@ -5,6 +5,10 @@ on:
     paths:
       - 'PediGuardianJava/patches/build-4.7.4.py'
       - '.github/workflows/build-4.7.4-java.yml'
+  pull_request:
+    paths:
+      - 'PediGuardianJava/patches/build-4.7.4.py'
+      - '.github/workflows/build-4.7.4-java.yml'
   workflow_dispatch:
 
 permissions:
@@ -67,6 +71,7 @@ jobs:
           timeout 5 java -jar target/pedi-guardian-java-4.7.4.jar 2>&1 | grep -F 'BOT_TOKEN' || true
 
       - name: Publish verified release artifact to repository
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           set -euo pipefail
