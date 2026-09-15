@@ -1,0 +1,79 @@
+name: Build PediGuardian Java 4.7.3
+
+on:
+  push:
+    paths:
+      - 'PediGuardianJava/patches/build-4.7.3.py'
+      - '.github/workflows/build-4.7.3-java.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Download verified 4.7.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 \
+            'https://raw.githubusercontent.com/hoseinsoltanzadeh1985-hue/Simorgh/main/Simorgh-PediGuardian-4.7.1-clean-update.zip' \
+            -o source.zip
+          echo '688d4ab294b99674b238ed5c6268e6be89ff3432de131525d77c6d2dadc83078  source.zip' | sha256sum -c -
+          unzip -q source.zip
+
+      - name: Apply deterministic 4.7.3 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd PediGuardianJava
+          python3 patches/build-4.7.3.py
+          test -f source/src/main/java/ir/pedirany/guardian/voice/VoiceOrderQueue.java
+          test -f source/src/main/java/ir/pedirany/guardian/games/GameCenter.java
+
+      - name: Compile Java 21
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd PediGuardianJava/source
+          rm -rf target && mkdir -p target/classes
+          javac --release 21 -d target/classes $(find src/main/java -name '*.java' | sort)
+          if [ -d src/main/resources ]; then cp -R src/main/resources/. target/classes/; fi
+          jar cfe target/pedi-guardian-java-4.7.3.jar ir.pedirany.guardian.Main -C target/classes .
+          sha256sum target/pedi-guardian-java-4.7.3.jar | tee target/pedi-guardian-java-4.7.3.jar.sha256
+
+      - name: Static regression assertions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd PediGuardianJava/source
+          grep -F 'Math.min(200,count)' src/main/java/ir/pedirany/guardian/voice/VoiceOrderQueue.java
+          grep -F 'a:wheel' src/main/java/ir/pedirany/guardian/commands/CommandRouter.java
+          grep -F 'statusCode()==409' src/main/java/ir/pedirany/guardian/voice/VoiceOrderQueue.java
+          grep -F 'singleButton' src/main/java/ir/pedirany/guardian/games/GameCenter.java
+          grep -F 'retro-flight.html' src/main/java/ir/pedirany/guardian/games/GameCenter.java
+          grep -F 'backgammon.html' src/main/java/ir/pedirany/guardian/games/GameCenter.java
+          java -jar target/pedi-guardian-java-4.7.3.jar 2>&1 | grep -F 'BOT_TOKEN' || true
+
+      - name: Publish verified release artifact to repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p PediGuardianJava/release
+          cp PediGuardianJava/source/target/pedi-guardian-java-4.7.3.jar PediGuardianJava/release/pedi-guardian-java-4.7.3.jar
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add PediGuardianJava/release/pedi-guardian-java-4.7.3.jar
+          if git diff --cached --quiet; then
+            echo '4.7.3 artifact already synchronized.'
+          else
+            git commit -m 'release: publish PediGuardian Java 4.7.3'
+            git push
+          fi
