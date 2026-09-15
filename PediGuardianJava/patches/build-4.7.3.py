@@ -12,6 +12,14 @@ def edit(rel, replacements):
         text = text.replace(old, new, 1)
     path.write_text(text, encoding='utf-8')
 
+
+def replace_all(rel, old, new):
+    path = ROOT / rel
+    text = path.read_text(encoding='utf-8')
+    if old not in text:
+        raise SystemExit(f'Version anchor not found in {path}')
+    path.write_text(text.replace(old, new), encoding='utf-8')
+
 edit('voice/VoiceOrderQueue.java', [
     ('int n=Math.max(1,Math.min(20,count));', 'int n=Math.max(1,Math.min(200,count));'),
     ('        if(out.statusCode()<200||out.statusCode()>=300)throw new IllegalStateException("voice queue HTTP "+out.statusCode()+": "+out.body());',
@@ -53,9 +61,28 @@ edit('games/GameCenter.java', [
     ('    private String buttons(){\n        return "{\\"inline_keyboard\\":[["+',
      '    private String buttons(long chat){\n        if(chat>0) return "{\\"inline_keyboard\\":[["+'),
     ('            "],[{\\"text\\":\\"🎮 Game Center\\",\\"web_app\\":{\\"url\\":"+TelegramClient.q(launcherUrl)+"}}]]}";\n    }',
-     '            "],[{\\"text\\":\\"🎮 Game Center\\",\\"web_app\\":{\\"url\\":"+TelegramClient.q(launcherUrl)+"}}]]}";\n        return "{\\"inline_keyboard\\":[["+\n            "{\\"text\\":\\"✈️ Air Raider\\",\\"url\\":"+TelegramClient.q(airUrl)+"},"+\n            "{\\"text\\":\\"🎲 Backgammon\\",\\"url\\":"+TelegramClient.q(backgammonUrl)+"}"+\n            "],[{\\"text\\":\\"🎮 Game Center\\",\\"url\\":"+TelegramClient.q(launcherUrl)+"}]]}";\n    }\n    private static String singleButton(long chat,String url,String text){\n        String kind=chat>0?"\\"web_app\\":{\\"url\\":"+TelegramClient.q(url):"\\"url\\":"+TelegramClient.q(url);\n        return "{\\"inline_keyboard\\":[[{\\"text\\":"+TelegramClient.q(text)+","+kind+"}]]}";\n    }'),
+     '            "],[{\\"text\\":\\"🎮 Game Center\\",\\"web_app\\":{\\"url\\":"+TelegramClient.q(launcherUrl)+"}}]]}";\n        return "{\\"inline_keyboard\\":[["+\n            "{\\"text\\":\\"✈️ Air Raider\\",\\"url\\":"+TelegramClient.q(airUrl)+"},"+\n            "{\\"text\\":\\"🎲 Backgammon\\",\\"url\\":"+TelegramClient.q(backgammonUrl)+"}"+\n            "],[{\\"text\\":\\"🎮 Game Center\\",\\"url\\":"+TelegramClient.q(launcherUrl)+"}]]}";\n    }\n    private static String singleButton(long chat,String url,String text){\n        String kind=chat>0?"\\\"web_app\\\":{\\\"url\\\":"+TelegramClient.q(url):"\\\"url\\\":"+TelegramClient.q(url);\n        return "{\\\"inline_keyboard\\\":[[{\\\"text\\\":"+TelegramClient.q(text)+","+kind+"}]]}";\n    }'),
 ])
 
-# Version markers are deliberately kept compatible with the 4.7.1 source artifact;
-# the produced JAR filename/release metadata identifies this as 4.7.3.
+# Correct the game URLs to the flat Simorgh Pages files that exist in the current game center.
+gp = ROOT / 'games/GameCenter.java'
+if gp.exists():
+    text = gp.read_text(encoding='utf-8')
+    text = text.replace('base+"/air-raider/index.html"', 'base+"/retro-flight.html"')
+    text = text.replace('base+"/backgammon/index.html"', 'base+"/backgammon.html"')
+    gp.write_text(text, encoding='utf-8')
+
+# Make the runtime-visible release markers consistent.
+for rel in [
+    'commands/handlers/GeneralHandler.java',
+    'games/GameCenter.java',
+]:
+    replace_all(rel, '4.7.1', '4.7.3')
+
+pom = Path('source/pom.xml')
+pom_text = pom.read_text(encoding='utf-8')
+if '<version>4.7.1</version>' not in pom_text:
+    raise SystemExit('POM 4.7.1 version anchor not found')
+pom.write_text(pom_text.replace('<version>4.7.1</version>', '<version>4.7.3</version>', 1), encoding='utf-8')
+
 print('4.7.3 patch applied')
