@@ -29,19 +29,21 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Download verified 4.7.1 source
+      - name: Verify and extract repository-pinned 4.7.1 source
         shell: bash
         run: |
           set -euo pipefail
-          curl -fsSL --retry 3 \
-            'https://raw.githubusercontent.com/hoseinsoltanzadeh1985-hue/Simorgh/main/Simorgh-PediGuardian-4.7.1-clean-update.zip' \
-            -o source.zip
+          source_archive='PediGuardianJava/source/PediGuardianJava-4.7.1-source.zip'
+          test -s "$source_archive"
+          cp "$source_archive" source.zip
           echo '688d4ab294b99674b238ed5c6268e6be89ff3432de131525d77c6d2dadc83078  source.zip' | sha256sum -c -
           rm -rf source_bundle
           mkdir -p source_bundle
           unzip -q source.zip -d source_bundle
+          test -f source_bundle/PediGuardianJava/source/pom.xml
           rm -rf PediGuardianJava/source
           cp -a source_bundle/PediGuardianJava/source PediGuardianJava/source
+          test -f PediGuardianJava/source/pom.xml
 
       - name: Apply deterministic 4.7.4 patch
         shell: bash
