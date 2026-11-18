@@ -43,6 +43,9 @@ jobs:
           test -f source_bundle/PediGuardianJava/source/pom.xml
           rm -rf PediGuardianJava/source
           cp -a source_bundle/PediGuardianJava/source PediGuardianJava/source
+          cp source.zip PediGuardianJava/source/PediGuardianJava-4.7.1-source.zip
+          rm -f source.zip
+          rm -rf source_bundle
           test -f PediGuardianJava/source/pom.xml
 
       - name: Apply deterministic 4.7.4 patch
