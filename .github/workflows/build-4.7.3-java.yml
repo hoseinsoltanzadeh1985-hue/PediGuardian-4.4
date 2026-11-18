@@ -81,5 +81,15 @@ jobs:
             echo '4.7.3 artifact already synchronized.'
           else
             git commit -m 'release: publish PediGuardian Java 4.7.3'
-            git push
+            for attempt in 1 2 3 4 5; do
+              if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+                exit 0
+              fi
+              if [ "$attempt" -eq 5 ]; then break; fi
+              echo "Concurrent artifact push detected; rebasing before retry ${attempt}/5."
+              git fetch origin "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+              git rebase "origin/${GITHUB_REF_NAME}"
+            done
+            echo "Unable to publish 4.7.3 artifact after five attempts." >&2
+            exit 1
           fi
