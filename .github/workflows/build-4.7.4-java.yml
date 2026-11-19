@@ -14,6 +14,11 @@ on:
 permissions:
   contents: write
 
+# Prevent overlapping 4.7.4 runs from publishing the same binary concurrently.
+concurrency:
+  group: pedi-guardian-4.7.4-publish-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -92,24 +97,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p PediGuardianJava/release
-          cp PediGuardianJava/source/target/pedi-guardian-java-4.7.4.jar PediGuardianJava/release/pedi-guardian-java-4.7.4.jar
+          artifact_source='PediGuardianJava/source/target/pedi-guardian-java-4.7.4.jar'
+          artifact_target='PediGuardianJava/release/pedi-guardian-java-4.7.4.jar'
+          test -s "$artifact_source"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add PediGuardianJava/release/pedi-guardian-java-4.7.4.jar
-          if git diff --cached --quiet; then
-            echo '4.7.4 artifact already synchronized.'
-          else
+
+          # Never rebase two binary JAR commits. Refresh the branch, then stage
+          # the freshly built artifact on top of the newest remote commit.
+          for attempt in 1 2 3 4 5; do
+            git fetch origin "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
+            git reset --hard "origin/${GITHUB_REF_NAME}"
+            mkdir -p "$(dirname "$artifact_target")"
+            cp "$artifact_source" "$artifact_target"
+            git add "$artifact_target"
+
+            if git diff --cached --quiet; then
+              echo '4.7.4 artifact already synchronized with the remote branch.'
+              exit 0
+            fi
+
             git commit -m 'release: publish PediGuardian Java 4.7.4'
-            for attempt in 1 2 3 4 5; do
-              if git push origin "HEAD:${GITHUB_REF_NAME}"; then
-                exit 0
-              fi
-              if [ "$attempt" -eq 5 ]; then break; fi
-              echo "Concurrent artifact push detected; rebasing before retry ${attempt}/5."
-              git fetch origin "+refs/heads/${GITHUB_REF_NAME}:refs/remotes/origin/${GITHUB_REF_NAME}"
-              git rebase "origin/${GITHUB_REF_NAME}"
-            done
-            echo "Unable to publish 4.7.4 artifact after five attempts." >&2
-            exit 1
-          fi
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo '4.7.4 artifact published successfully.'
+              exit 0
+            fi
+
+            echo "Remote branch advanced during publish; refreshing and retrying ($attempt/5)." >&2
+          done
+
+          echo 'Unable to publish 4.7.4 artifact after five fast-forward attempts.' >&2
+          exit 1
