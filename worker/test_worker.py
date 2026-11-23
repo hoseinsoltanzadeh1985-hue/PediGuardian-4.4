@@ -231,5 +231,22 @@ class WorkerQueueLeaseTests(unittest.TestCase):
             worker.Store().complete(9, "DONE", {}, "stale-lease-token")
 
 
+class PyTgCallsRuntimeTests(unittest.TestCase):
+    def test_pinned_py_tgcalls_imports_required_runtime_symbols(self) -> None:
+        self.assertIsNotNone(worker.PyTgCalls, "py-tgcalls import failed")
+        self.assertIsNotNone(worker.AudioQuality, "AudioQuality import failed")
+        self.assertIsNotNone(worker.MediaStream, "MediaStream import failed")
+        self.assertTrue(hasattr(worker.AudioQuality, "STUDIO"))
+        self.assertTrue(hasattr(worker.MediaStream, "Flags"))
+        self.assertTrue(hasattr(worker.MediaStream.Flags, "IGNORE"))
+
+    def test_worker_voice_client_api_methods_exist(self) -> None:
+        for method in ("start", "play", "pause", "resume", "leave_call"):
+            self.assertTrue(
+                callable(getattr(worker.PyTgCalls, method, None)),
+                f"PyTgCalls.{method} is missing",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
