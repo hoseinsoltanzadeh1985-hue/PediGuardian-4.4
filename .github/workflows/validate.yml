@@ -44,4 +44,13 @@ jobs:
           grep -q 'upstream_unavailable.*502' cloud/supabase/functions/telegram-webhook-v47/index.ts
           grep -q 'READY = True' worker/worker.py
           grep -q 'status = 200 if ready else 503' worker/worker.py
+          grep -q 'claim_telegram_update' cloud/supabase/functions/telegram-webhook-v4/index.ts
+          grep -q 'crypto.randomUUID' cloud/supabase/functions/telegram-webhook-v4/index.ts
+          grep -q 'messageLockTypes' cloud/supabase/functions/telegram-webhook-v4/index.ts
+          grep -q 'MEDIA_ALLOWED_HOSTS' worker/worker.py
+          grep -q 'reclaim_expired_voice_order_requests' worker/worker.py
+          grep -q 'resolve_safe_source' worker/worker.py
+          grep -q 'py-tgcalls==2.1.0' worker/requirements.txt
+          grep -q 'claim_telegram_update' supabase/migrations/20261123150000_guardian_schema_and_inbox_hardening.sql
+          grep -q 'revoke execute on function public.claim_telegram_update' supabase/migrations/20261123150000_guardian_schema_and_inbox_hardening.sql
           echo "PediGuardian validation passed"
