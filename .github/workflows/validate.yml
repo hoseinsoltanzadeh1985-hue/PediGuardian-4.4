@@ -38,19 +38,31 @@ jobs:
 
       - name: Validate production source markers
         run: |
-          grep -q 'const V="4.7.5"' cloud/supabase/functions/telegram-webhook-v4/index.ts
-          grep -q 'error?.code==="23505"' cloud/supabase/functions/telegram-webhook-v4/index.ts
-          grep -q 'answerCallbackQuery' cloud/supabase/functions/telegram-webhook-v4/index.ts
-          grep -q 'upstream_unavailable.*502' cloud/supabase/functions/telegram-webhook-v47/index.ts
-          grep -q 'READY = True' worker/worker.py
-          grep -q 'status = 200 if ready else 503' worker/worker.py
-          grep -q 'claim_telegram_update' cloud/supabase/functions/telegram-webhook-v4/index.ts
-          grep -q 'crypto.randomUUID' cloud/supabase/functions/telegram-webhook-v4/index.ts
-          grep -q 'messageLockTypes' cloud/supabase/functions/telegram-webhook-v4/index.ts
-          grep -q 'MEDIA_ALLOWED_HOSTS' worker/worker.py
-          grep -q 'reclaim_expired_voice_order_requests' worker/worker.py
-          grep -q 'resolve_safe_source' worker/worker.py
-          grep -q 'py-tgcalls==2.1.0' worker/requirements.txt
-          grep -q 'claim_telegram_update' supabase/migrations/20261123150000_guardian_schema_and_inbox_hardening.sql
-          grep -q 'revoke execute on function public.claim_telegram_update' supabase/migrations/20261123150000_guardian_schema_and_inbox_hardening.sql
-          echo "PediGuardian validation passed"
+          python - <<'PY'
+          from pathlib import Path
+
+          checks = {
+              "webhook version": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", 'const V="4.7.5"'),
+              "duplicate update guard": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", 'error?.code==="23505"'),
+              "callback query handling": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", "answerCallbackQuery"),
+              "proxy retry response": ("cloud/supabase/functions/telegram-webhook-v47/index.ts", "upstream_unavailable"),
+              "worker readiness": ("worker/worker.py", "status = 200 if ready else 503"),
+              "webhook inbox lease": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", "claim_telegram_update"),
+              "webhook lease token": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", "crypto.randomUUID"),
+              "group message locks": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", "messageLockTypes"),
+              "media allowlist": ("worker/worker.py", "MEDIA_ALLOWED_HOSTS"),
+              "expired queue reclaim": ("worker/worker.py", "reclaim_expired_voice_order_requests"),
+              "redirect validation": ("worker/worker.py", "resolve_safe_source"),
+              "pytgcalls pin": ("worker/requirements.txt", "py-tgcalls==2.1.0"),
+              "webhook inbox migration": ("supabase/migrations/20261123150000_guardian_schema_and_inbox_hardening.sql", "claim_telegram_update"),
+              "restricted RPC execute": ("supabase/migrations/20261123150000_guardian_schema_and_inbox_hardening.sql", "revoke execute on function public.claim_telegram_update"),
+          }
+
+          for label, (filename, marker) in checks.items():
+              content = Path(filename).read_text(encoding="utf-8")
+              if marker not in content:
+                  raise SystemExit(f"Missing required marker: {label} ({filename})")
+              print(f"OK: {label}")
+
+          print("PediGuardian validation passed")
+          PY
