@@ -194,7 +194,7 @@ class VoiceClient:
 
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
-        if self.path not in {"/health", "/heartbeat"}:
+        if self.path not in {"/health", "/heartbeat", "/live"}:
             self.send_response(404); self.end_headers(); return
         if self.path == "/live":
             status = 200
