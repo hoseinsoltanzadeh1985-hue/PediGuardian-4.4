@@ -73,6 +73,60 @@ class WorkerConfigurationTests(unittest.TestCase):
             for name, value in previous.items():
                 setattr(worker, name, value)
 
+    def test_invalid_api_id_is_rejected(self) -> None:
+        names = (
+            "SUPABASE_URL",
+            "SUPABASE_KEY",
+            "BOT_TOKEN",
+            "TG_API_ID",
+            "TG_API_HASH",
+            "TG_SESSION_STRING",
+        )
+        previous = {name: getattr(worker, name) for name in names}
+        values = {
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_KEY": "placeholder-secret",
+            "BOT_TOKEN": "placeholder-token",
+            "TG_API_ID": "not-an-integer",
+            "TG_API_HASH": "placeholder-hash",
+            "TG_SESSION_STRING": "placeholder-session",
+        }
+        try:
+            for name, value in values.items():
+                setattr(worker, name, value)
+            with self.assertRaisesRegex(RuntimeError, "TG_API_ID must be a positive integer"):
+                worker.validate_environment()
+        finally:
+            for name, value in previous.items():
+                setattr(worker, name, value)
+
+    def test_non_positive_api_id_is_rejected(self) -> None:
+        names = (
+            "SUPABASE_URL",
+            "SUPABASE_KEY",
+            "BOT_TOKEN",
+            "TG_API_ID",
+            "TG_API_HASH",
+            "TG_SESSION_STRING",
+        )
+        previous = {name: getattr(worker, name) for name in names}
+        values = {
+            "SUPABASE_URL": "https://example.supabase.co",
+            "SUPABASE_KEY": "placeholder-secret",
+            "BOT_TOKEN": "placeholder-token",
+            "TG_API_ID": "0",
+            "TG_API_HASH": "placeholder-hash",
+            "TG_SESSION_STRING": "placeholder-session",
+        }
+        try:
+            for name, value in values.items():
+                setattr(worker, name, value)
+            with self.assertRaisesRegex(RuntimeError, "TG_API_ID must be a positive integer"):
+                worker.validate_environment()
+        finally:
+            for name, value in previous.items():
+                setattr(worker, name, value)
+
     def test_valid_configuration_passes(self) -> None:
         names = (
             "SUPABASE_URL",
