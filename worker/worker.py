@@ -90,22 +90,76 @@ def validate_environment() -> None:
         raise RuntimeError("Missing required environment variables: " + ", ".join(missing))
 
 
+def safe_source(source: str) -> bool:
+    """Accept HTTPS media only from an explicit allowlist and public DNS addresses."""
+    try:
+        parsed = urlparse(source)
+        host = (parsed.hostname or "").lower().rstrip(".")
+        if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port or len(source) > 2048:
+            return False
+        if not host or not MEDIA_ALLOWED_HOSTS:
+            return False
+        if not any(host == allowed or host.endswith("." + allowed) for allowed in MEDIA_ALLOWED_HOSTS):
+            return False
+        if host == "localhost" or host.endswith(".localhost"):
+            return False
+        addresses = {item[4][0] for item in socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)}
+        if not addresses:
+            return False
+        return all(
+            (ip := ipaddress.ip_address(address)).is_global
+            and not ip.is_private and not ip.is_loopback
+            and not ip.is_link_local and not ip.is_reserved
+            for address in addresses
+        )
+    except (OSError, ValueError):
+        return False
+
+
+def resolve_safe_source(source: str) -> str:
+    """Validate every redirect destination before handing the URL to FFmpeg."""
+    current = source
+    for _ in range(6):
+        if not safe_source(current):
+            raise RuntimeError("stream source must be a public HTTPS URL on an allowlisted host")
+        response = requests.get(
+            current, headers={"Range": "bytes=0-0"}, allow_redirects=False,
+            stream=True, timeout=(5, 10),
+        )
+        try:
+            if response.is_redirect or response.is_permanent_redirect:
+                location = response.headers.get("Location")
+                if not location:
+                    raise RuntimeError("media redirect has no Location header")
+                current = urljoin(current, location)
+                continue
+            if response.status_code not in {200, 206}:
+                raise RuntimeError("media source did not return a stream response")
+            return current
+        finally:
+            response.close()
+    raise RuntimeError("media source redirect limit exceeded")
+
+
 def headers() -> dict[str, str]:
     return {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
 
 
-def request(method: str, url: str, **kwargs) -> requests.Response:
-    last = None
-    for n in range(3):
+def request(method: str, url: str, *, retry_safe: bool = False, **kwargs) -> requests.Response:
+    """Retry only operations explicitly marked idempotent and never expose token-bearing URLs."""
+    last: Exception | None = None
+    attempts = 3 if retry_safe else 1
+    for attempt in range(attempts):
         try:
             response = requests.request(method, url, timeout=15, **kwargs)
             response.raise_for_status()
             return response
         except Exception as exc:
             last = exc
-            if n < 2:
-                time.sleep(2**n + random.random())
-    raise RuntimeError(f"request failed: {last}")
+            if attempt < attempts - 1:
+                time.sleep(2**attempt)
+    error_type = type(last).__name__ if last is not None else "UnknownError"
+    raise RuntimeError(f"{method} request failed after {attempts} attempt(s): {error_type}") from None
 
 
 def encode_payload(payload: dict) -> str:
