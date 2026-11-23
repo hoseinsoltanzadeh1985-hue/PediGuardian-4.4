@@ -185,16 +185,29 @@ class WorkerQueueLeaseTests(unittest.TestCase):
         self.assertIn("status=eq.PENDING", mock_request.call_args_list[1].args[1])
 
     @patch("worker.request")
-    def test_completion_is_scoped_to_current_worker_claim(self, mock_request) -> None:
+    def test_claim_returns_unique_lease_token(self, mock_request) -> None:
+        response = Mock()
+        response.json.return_value = "test-lease-token"
+        mock_request.return_value = response
+        self.assertEqual(worker.Store().claim(9), "test-lease-token")
+        args, kwargs = mock_request.call_args
+        self.assertEqual(args[0], "POST")
+        self.assertIn("claim_voice_order_request", args[1])
+        self.assertTrue(kwargs["retry_safe"])
+
+    @patch("worker.request")
+    def test_completion_is_scoped_to_exact_current_lease_token(self, mock_request) -> None:
         response = Mock()
         response.json.return_value = [{"id": 9}]
         mock_request.return_value = response
-        worker.Store().complete(9, "DONE", {"ok": True})
+        worker.Store().complete(9, "DONE", {"ok": True}, "test-lease-token")
         args, kwargs = mock_request.call_args
         self.assertEqual(args[0], "PATCH")
         self.assertIn("id=eq.9&worker_id=eq.", args[1])
+        self.assertIn("lease_token=eq.test-lease-token", args[1])
         self.assertIn("status=eq.CLAIMED", args[1])
         self.assertNotIn("retry_safe", kwargs)
+        self.assertIsNone(kwargs["json"]["lease_token"])
 
     @patch("worker.request")
     def test_empty_patch_result_is_verified_with_safe_read(self, mock_request) -> None:
@@ -203,7 +216,7 @@ class WorkerQueueLeaseTests(unittest.TestCase):
         read_response = Mock()
         read_response.json.return_value = [{"result": {"ok": True}}]
         mock_request.side_effect = [patch_response, read_response]
-        worker.Store().complete(9, "DONE", {"ok": True})
+        worker.Store().complete(9, "DONE", {"ok": True}, "test-lease-token")
         self.assertEqual(mock_request.call_count, 2)
         self.assertEqual(mock_request.call_args_list[1].args[0], "GET")
 
@@ -215,7 +228,7 @@ class WorkerQueueLeaseTests(unittest.TestCase):
         read_response.json.return_value = []
         mock_request.side_effect = [patch_response, read_response]
         with self.assertRaisesRegex(RuntimeError, "lease was lost"):
-            worker.Store().complete(9, "DONE", {})
+            worker.Store().complete(9, "DONE", {}, "stale-lease-token")
 
 
 if __name__ == "__main__":
