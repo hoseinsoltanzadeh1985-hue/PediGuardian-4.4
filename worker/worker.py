@@ -14,6 +14,9 @@ import os
 import random
 import signal
 import time
+import ipaddress
+import socket
+from urllib.parse import urljoin, urlparse
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
@@ -25,6 +28,14 @@ try:
 except Exception:  # pragma: no cover
     Client = None
     raw = None
+
+try:
+    from pytgcalls import PyTgCalls
+    from pytgcalls.types import AudioQuality, MediaStream
+except Exception:  # pragma: no cover
+    PyTgCalls = None
+    AudioQuality = None
+    MediaStream = None
 
 LOG = logging.getLogger("pedi.voice_worker")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
@@ -50,6 +61,8 @@ MAX_ROSTER = max(1, min(200, int(os.getenv("MAX_ROSTER", "200"))))
 TG_API_ID = os.getenv("TG_API_ID")
 TG_API_HASH = os.getenv("TG_API_HASH")
 TG_SESSION_STRING = os.getenv("TG_SESSION_STRING") or os.getenv("TG_USER_SESSION")
+MEDIA_ALLOWED_HOSTS = {value.strip().lower().rstrip(".") for value in os.getenv("MEDIA_ALLOWED_HOSTS", "").split(",") if value.strip()}
+LAST_HEARTBEAT = 0.0
 
 
 def validate_environment() -> None:
