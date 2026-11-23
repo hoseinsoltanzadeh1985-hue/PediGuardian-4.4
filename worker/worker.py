@@ -186,13 +186,14 @@ class Store:
             headers=headers(), retry_safe=True,
         ).json()
 
-    def claim(self, request_id: int) -> bool:
+    def claim(self, request_id: int) -> str | None:
         response = request(
             "POST", f"{SUPABASE_URL}/rest/v1/rpc/claim_voice_order_request",
             headers=headers(), json={"p_id": request_id, "p_worker_id": WORKER_ID},
             retry_safe=True,
         )
-        return response.text.strip().lower() in {"true", "[true]"}
+        token = response.json()
+        return token.strip() if isinstance(token, str) and token.strip() else None
 
     def _completion_already_recorded(self, request_id: int, status: str, result: dict) -> bool:
         rows = request(
@@ -202,14 +203,15 @@ class Store:
         ).json()
         return bool(rows and rows[0].get("result") == result)
 
-    def complete(self, request_id: int, status: str, result: dict) -> None:
+    def complete(self, request_id: int, status: str, result: dict, lease_token: str) -> None:
+        # A stale process cannot finish a job after a later claim replaced its token.
         # PATCH is not blindly retried: verify the state after a lost response.
         try:
             response = request(
                 "PATCH",
-                f"{self.base}/voice_order_requests?id=eq.{request_id}&worker_id=eq.{WORKER_ID}&status=eq.CLAIMED",
+                f"{self.base}/voice_order_requests?id=eq.{request_id}&worker_id=eq.{WORKER_ID}&lease_token=eq.{lease_token}&status=eq.CLAIMED",
                 headers={**headers(), "Prefer": "return=representation"},
-                json={"status": status, "completed_at": datetime.now(timezone.utc).isoformat(), "result": result, "lease_until": None},
+                json={"status": status, "completed_at": datetime.now(timezone.utc).isoformat(), "result": result, "lease_until": None, "lease_token": None},
             )
         except RuntimeError:
             if self._completion_already_recorded(request_id, status, result):
@@ -409,7 +411,8 @@ async def main() -> None:
             store.heartbeat()
             for command in store.pending():
                 request_id = int(command["id"])
-                if not store.claim(request_id):
+                lease_token = store.claim(request_id)
+                if not lease_token:
                     continue
                 group_id = int(command["group_id"])
                 requested = max(1, min(MAX_ROSTER, int(command.get("count") or 1)))
@@ -426,7 +429,7 @@ async def main() -> None:
                             await voice.resume(chat_id)
                         else:
                             await voice.stop(chat_id)
-                        store.complete(request_id, "DONE", {"mode": "PYTG_CALLS_STEREO", "action": action, "chat_id": chat_id})
+                        store.complete(request_id, "DONE", {"mode": "PYTG_CALLS_STEREO", "action": action, "chat_id": chat_id}, lease_token)
                         continue
                     if action != "WHEEL":
                         raise RuntimeError("unsupported voice action")
@@ -437,10 +440,10 @@ async def main() -> None:
                     store.snapshot(group_id, people)
                     await notify(chat_id, people, chosen_count)
                     result_users = [{"id": p["id"], "username": p["username"], "name": p["display_name"]} for p in people]
-                    store.complete(request_id, "DONE", {"mode": "CURRENT_ROSTER", "requested_count": requested, "effective_count": chosen_count, "count": len(people), "users": result_users, "wheel": "multi-winner-elimination"})
+                    store.complete(request_id, "DONE", {"mode": "CURRENT_ROSTER", "requested_count": requested, "effective_count": chosen_count, "count": len(people), "users": result_users, "wheel": "multi-winner-elimination"}, lease_token)
                 except Exception as exc:
                     LOG.exception("voice request %s failed", request_id)
-                    store.complete(request_id, "FAILED", {"error": str(exc)[:500]})
+                    store.complete(request_id, "FAILED", {"error": str(exc)[:500]}, lease_token)
             try:
                 await asyncio.wait_for(stop.wait(), timeout=HEARTBEAT_SECONDS)
             except asyncio.TimeoutError:
