@@ -56,6 +56,9 @@ jobs:
               "pytgcalls pin": ("worker/requirements.txt", "py-tgcalls==2.1.0"),
               "webhook inbox migration": ("supabase/migrations/20261123150000_guardian_schema_and_inbox_hardening.sql", "claim_telegram_update"),
               "restricted RPC execute": ("supabase/migrations/20261123150000_guardian_schema_and_inbox_hardening.sql", "revoke execute on function public.claim_telegram_update"),
+              "voice queue lease token": ("worker/worker.py", "lease_token=eq.{lease_token}"),
+              "voice queue UUID generation": ("supabase/migrations/20261123160000_voice_queue_lease_tokens.sql", "pg_catalog.gen_random_uuid()"),
+              "voice queue UUID RPC": ("supabase/migrations/20261123160000_voice_queue_lease_tokens.sql", "returns uuid"),
           }
 
           for label, (filename, marker) in checks.items():
