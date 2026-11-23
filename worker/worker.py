@@ -29,12 +29,14 @@ except Exception:  # pragma: no cover
 LOG = logging.getLogger("pedi.voice_worker")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
 
-SUPABASE_URL = os.environ["SUPABASE_URL"].rstrip("/")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 # Current project naming is SUPABASE_SECRET_KEY; retain compatibility with the
 # legacy SUPABASE_SERVICE_ROLE_KEY name used by older worker revisions.
 SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-if not SUPABASE_KEY:
-    raise RuntimeError("SUPABASE_SECRET_KEY (or legacy SUPABASE_SERVICE_ROLE_KEY) is required")
+
+# Readiness is separate from liveness: Railway must not mark a worker healthy
+# until the MTProto client starts and the first Supabase heartbeat succeeds.
+READY = False
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 VOICE_WHEEL_URL = os.getenv(
@@ -48,6 +50,31 @@ MAX_ROSTER = max(1, min(200, int(os.getenv("MAX_ROSTER", "200"))))
 TG_API_ID = os.getenv("TG_API_ID")
 TG_API_HASH = os.getenv("TG_API_HASH")
 TG_SESSION_STRING = os.getenv("TG_SESSION_STRING") or os.getenv("TG_USER_SESSION")
+
+
+def validate_environment() -> None:
+    """Fail fast with variable names only; never print credential values."""
+    missing: list[str] = []
+    if not SUPABASE_URL:
+        missing.append("SUPABASE_URL")
+    if not SUPABASE_KEY:
+        missing.append("SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY)")
+    if not BOT_TOKEN:
+        missing.append("BOT_TOKEN")
+    if not TG_API_ID:
+        missing.append("TG_API_ID")
+    else:
+        try:
+            if int(TG_API_ID) <= 0:
+                raise ValueError("must be positive")
+        except (TypeError, ValueError):
+            raise RuntimeError("TG_API_ID must be a positive integer")
+    if not TG_API_HASH:
+        missing.append("TG_API_HASH")
+    if not TG_SESSION_STRING:
+        missing.append("TG_SESSION_STRING (or TG_USER_SESSION)")
+    if missing:
+        raise RuntimeError("Missing required environment variables: " + ", ".join(missing))
 
 
 def headers() -> dict[str, str]:
@@ -169,8 +196,25 @@ class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         if self.path not in {"/health", "/heartbeat"}:
             self.send_response(404); self.end_headers(); return
-        body = b'{"ok":true,"mode":"voice-only","roster":"current-at-execution","wheel":"multi-winner"}'
-        self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+        if self.path == "/live":
+            status = 200
+            payload = {"ok": True, "state": "alive"}
+        else:
+            ready = READY
+            status = 200 if ready else 503
+            payload = {
+                "ok": ready,
+                "ready": ready,
+                "mode": "voice-only",
+                "roster": "current-at-execution",
+                "wheel": "multi-winner",
+            }
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def log_message(self, *_args) -> None:
         return
@@ -198,11 +242,17 @@ async def notify(chat_id: int, people: list[dict], count: int) -> None:
 
 
 async def main() -> None:
-    store = Store(); voice = VoiceClient(); await voice.start()
+    global READY
+    validate_environment()
+    store = Store()
+    voice = VoiceClient()
     stop = asyncio.Event(); loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, stop.set)
     try:
+        await voice.start()
+        store.heartbeat()
+        READY = True
         while not stop.is_set():
             store.heartbeat()
             for command in store.pending():
@@ -229,8 +279,18 @@ async def main() -> None:
             except asyncio.TimeoutError:
                 pass
     finally:
+        READY = False
         await voice.close()
 
 
 if __name__ == "__main__":
-    serve(); asyncio.run(main())
+    server = serve()
+    try:
+        asyncio.run(main())
+    except Exception:
+        LOG.exception("voice worker stopped")
+        raise
+    finally:
+        READY = False
+        server.shutdown()
+        server.server_close()
