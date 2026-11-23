@@ -171,23 +171,66 @@ class Store:
     def __init__(self) -> None:
         self.base = f"{SUPABASE_URL}/rest/v1"
 
+    def reclaim_expired(self) -> None:
+        request(
+            "POST",
+            f"{SUPABASE_URL}/rest/v1/rpc/reclaim_expired_voice_order_requests",
+            headers=headers(), json={}, retry_safe=True,
+        )
+
     def pending(self) -> list[dict]:
-        return request("GET", f"{self.base}/voice_order_requests?status=eq.PENDING&order=created_at.asc&limit=20", headers=headers()).json()
+        self.reclaim_expired()
+        return request(
+            "GET",
+            f"{self.base}/voice_order_requests?status=eq.PENDING&order=created_at.asc&limit=20",
+            headers=headers(), retry_safe=True,
+        ).json()
 
     def claim(self, request_id: int) -> bool:
-        response = request("POST", f"{SUPABASE_URL}/rest/v1/rpc/claim_voice_order_request", headers=headers(), json={"p_id": request_id, "p_worker_id": WORKER_ID})
+        response = request(
+            "POST", f"{SUPABASE_URL}/rest/v1/rpc/claim_voice_order_request",
+            headers=headers(), json={"p_id": request_id, "p_worker_id": WORKER_ID},
+            retry_safe=True,
+        )
         return response.text.strip().lower() in {"true", "[true]"}
 
+    def _completion_already_recorded(self, request_id: int, status: str, result: dict) -> bool:
+        rows = request(
+            "GET",
+            f"{self.base}/voice_order_requests?id=eq.{request_id}&worker_id=eq.{WORKER_ID}&status=eq.{status}&select=id,status,result&limit=1",
+            headers=headers(), retry_safe=True,
+        ).json()
+        return bool(rows and rows[0].get("result") == result)
+
     def complete(self, request_id: int, status: str, result: dict) -> None:
-        request("PATCH", f"{self.base}/voice_order_requests?id=eq.{request_id}", headers=headers(), json={"status": status, "completed_at": datetime.now(timezone.utc).isoformat(), "result": result})
+        # PATCH is not blindly retried: verify the state after a lost response.
+        try:
+            response = request(
+                "PATCH",
+                f"{self.base}/voice_order_requests?id=eq.{request_id}&worker_id=eq.{WORKER_ID}&status=eq.CLAIMED",
+                headers={**headers(), "Prefer": "return=representation"},
+                json={"status": status, "completed_at": datetime.now(timezone.utc).isoformat(), "result": result, "lease_until": None},
+            )
+        except RuntimeError:
+            if self._completion_already_recorded(request_id, status, result):
+                return
+            raise
+        rows = response.json()
+        if isinstance(rows, list) and rows:
+            return
+        if not self._completion_already_recorded(request_id, status, result):
+            raise RuntimeError("request lease was lost before completion")
 
     def heartbeat(self) -> None:
+        global LAST_HEARTBEAT
         request(
             "POST",
             f"{self.base}/voice_worker_heartbeats?on_conflict=worker_id",
             headers={**headers(), "Prefer": "resolution=merge-duplicates"},
-            json={"worker_id": WORKER_ID, "status": "IDLE", "details": {"version": "4.7.1", "mode": "voice-only", "roster": "current-at-execution", "wheel": "multi-winner-elimination"}, "last_seen_at": datetime.now(timezone.utc).isoformat()},
+            json={"worker_id": WORKER_ID, "status": "IDLE", "details": {"version": "4.7.5", "mode": "pytgcalls-stereo", "engine": "py-tgcalls-2.1.0", "roster": "current-at-execution", "wheel": "multi-winner-elimination"}, "last_seen_at": datetime.now(timezone.utc).isoformat()},
+            retry_safe=True,
         )
+        LAST_HEARTBEAT = time.monotonic()
 
     def group_chat_id(self, group_id: int) -> int:
         rows = request("GET", f"{self.base}/groups?id=eq.{group_id}&select=telegram_chat_id&limit=1", headers=headers()).json()
@@ -204,20 +247,59 @@ class Store:
 class VoiceClient:
     def __init__(self) -> None:
         self.client = None
+        self.calls = None
+        self.active_chats: set[int] = set()
         if Client and raw and TG_API_ID and TG_API_HASH and TG_SESSION_STRING:
             self.client = Client(WORKER_ID, api_id=int(TG_API_ID), api_hash=TG_API_HASH, session_string=TG_SESSION_STRING)
+            if PyTgCalls:
+                self.calls = PyTgCalls(self.client)
 
     async def start(self) -> None:
-        if not self.client:
-            raise RuntimeError("TG_API_ID/TG_API_HASH/TG_SESSION_STRING are required")
+        if not self.client or not self.calls:
+            raise RuntimeError("MTProto credentials and py-tgcalls are required")
         await self.client.start()
+        await self.calls.start()
 
     async def close(self) -> None:
+        if self.calls:
+            for chat_id in list(self.active_chats):
+                try:
+                    await self.calls.leave_call(chat_id)
+                except Exception:
+                    pass
         if self.client:
             try:
                 await self.client.stop()
             except Exception:
                 pass
+
+    async def play(self, chat_id: int, source: str) -> None:
+        if not self.calls or not MediaStream or not AudioQuality:
+            raise RuntimeError("PyTgCalls stereo engine is not available")
+        resolved_source = resolve_safe_source(source)
+        stream = MediaStream(
+            resolved_source,
+            audio_parameters=AudioQuality.STUDIO,
+            video_flags=MediaStream.Flags.IGNORE,
+        )
+        await self.calls.play(chat_id, stream)
+        self.active_chats.add(chat_id)
+
+    async def pause(self, chat_id: int) -> None:
+        if not self.calls:
+            raise RuntimeError("PyTgCalls stereo engine is not available")
+        await self.calls.pause(chat_id)
+
+    async def resume(self, chat_id: int) -> None:
+        if not self.calls:
+            raise RuntimeError("PyTgCalls stereo engine is not available")
+        await self.calls.resume(chat_id)
+
+    async def stop(self, chat_id: int) -> None:
+        if not self.calls:
+            raise RuntimeError("PyTgCalls stereo engine is not available")
+        await self.calls.leave_call(chat_id)
+        self.active_chats.discard(chat_id)
 
     async def participants(self, chat_id: int) -> list[dict]:
         peer = await self.client.resolve_peer(chat_id)
@@ -267,14 +349,17 @@ class HealthHandler(BaseHTTPRequestHandler):
             status = 200
             payload = {"ok": True, "state": "alive"}
         else:
-            ready = READY
+            ready = READY and LAST_HEARTBEAT > 0 and (time.monotonic() - LAST_HEARTBEAT) <= max(HEARTBEAT_SECONDS * 3, 30)
             status = 200 if ready else 503
             payload = {
                 "ok": ready,
                 "ready": ready,
-                "mode": "voice-only",
+                "mode": "pytgcalls-stereo",
+                "engine": "py-tgcalls-2.1.0",
+                "channels": 2,
                 "roster": "current-at-execution",
                 "wheel": "multi-winner",
+                "last_heartbeat_age_seconds": round(time.monotonic() - LAST_HEARTBEAT, 1) if LAST_HEARTBEAT else None,
             }
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         self.send_response(status)
@@ -330,6 +415,21 @@ async def main() -> None:
                 requested = max(1, min(MAX_ROSTER, int(command.get("count") or 1)))
                 try:
                     chat_id = store.group_chat_id(group_id)
+                    action = str(command.get("action") or "WHEEL").upper()
+                    if action in {"PLAY", "PAUSE", "RESUME", "STOP"}:
+                        source = str(command.get("source_url") or "").strip()
+                        if action == "PLAY":
+                            await voice.play(chat_id, source)
+                        elif action == "PAUSE":
+                            await voice.pause(chat_id)
+                        elif action == "RESUME":
+                            await voice.resume(chat_id)
+                        else:
+                            await voice.stop(chat_id)
+                        store.complete(request_id, "DONE", {"mode": "PYTG_CALLS_STEREO", "action": action, "chat_id": chat_id})
+                        continue
+                    if action != "WHEEL":
+                        raise RuntimeError("unsupported voice action")
                     people = await voice.participants(chat_id)
                     if not people:
                         raise RuntimeError("در این لحظه فردی در ویس‌کال حاضر نیست.")
