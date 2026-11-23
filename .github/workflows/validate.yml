@@ -6,14 +6,42 @@ on:
   pull_request:
     branches: ["main"]
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate repository contents
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check Supabase Edge Functions
         run: |
-          test -f cloud/supabase/functions/telegram-webhook-v47/index.ts
-          grep -q 'const VERSION = "4.7.0"' cloud/supabase/functions/telegram-webhook-v47/index.ts
-          grep -q 'telegram_updates' cloud/supabase/functions/telegram-webhook-v47/index.ts
-          echo 'PediGuardian repository validation passed'
+          deno check cloud/supabase/functions/telegram-webhook-v4/index.ts
+          deno check cloud/supabase/functions/telegram-webhook-v47/index.ts
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install worker dependencies
+        run: python -m pip install -r worker/requirements.txt
+
+      - name: Run worker readiness tests
+        run: python -m unittest discover -s worker -p "test_*.py" -v
+
+      - name: Validate production source markers
+        run: |
+          grep -q 'const V="4.7.5"' cloud/supabase/functions/telegram-webhook-v4/index.ts
+          grep -q 'error?.code==="23505"' cloud/supabase/functions/telegram-webhook-v4/index.ts
+          grep -q 'answerCallbackQuery' cloud/supabase/functions/telegram-webhook-v4/index.ts
+          grep -q 'upstream_unavailable.*502' cloud/supabase/functions/telegram-webhook-v47/index.ts
+          grep -q 'READY = True' worker/worker.py
+          grep -q 'status = 200 if ready else 503' worker/worker.py
+          echo "PediGuardian validation passed"
