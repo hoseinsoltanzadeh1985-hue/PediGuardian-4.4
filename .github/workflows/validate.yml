@@ -43,7 +43,8 @@ jobs:
 
           checks = {
               "webhook version": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", 'const V="4.7.5"'),
-              "duplicate update guard": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", 'error?.code==="23505"'),
+              "duplicate update guard": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", 'existing?.status==="PROCESSED"'),
+              "webhook retries while claim is active": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", 'status:503'),
               "callback query handling": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", "answerCallbackQuery"),
               "proxy retry response": ("cloud/supabase/functions/telegram-webhook-v47/index.ts", "upstream_unavailable"),
               "worker readiness": ("worker/worker.py", "status = 200 if ready else 503"),
