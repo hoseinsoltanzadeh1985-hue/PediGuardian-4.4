@@ -130,4 +130,4 @@ jobs:
       - name: Apply and test flood-control migration
         run: psql -v ON_ERROR_STOP=1 -f supabase/tests/group_message_rate_limit.integration.sql
       - name: Test concurrent flood-control requests
-        run: python -m unittest supabase.tests.test_rate_limit_concurrency -v
+        run: python supabase/tests/test_rate_limit_concurrency.py
