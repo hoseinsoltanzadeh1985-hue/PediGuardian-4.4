@@ -16,7 +16,7 @@ export function createTelegramClient({ token, fetchImpl = fetch }: TelegramClien
   if (!token || !token.trim()) throw new TypeError("Telegram bot token is required");
   const base = `https://api.telegram.org/bot${token.trim()}`;
 
-  return async function call<T = unknown>(method: string, payload: Record<string, unknown> = {}): Promise<T> {
+  return async function call<T = any>(method: string, payload: Record<string, unknown> = {}): Promise<T> {
     if (!/^[A-Za-z][A-Za-z0-9]{0,63}$/.test(method)) {
       throw new TypeError("Invalid Telegram Bot API method name");
     }
