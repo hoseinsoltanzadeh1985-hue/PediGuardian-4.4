@@ -2,7 +2,7 @@ name: Validate PediGuardian
 
 on:
   push:
-    branches: ["main", "release/**"]
+    branches: ["main", "release/**", "fix/**"]
   pull_request:
     branches: ["main"]
 
@@ -24,6 +24,11 @@ jobs:
         run: |
           deno check cloud/supabase/functions/telegram-webhook-v4/index.ts
           deno check cloud/supabase/functions/telegram-webhook-v47/index.ts
+          deno check cloud/supabase/functions/telegram-webhook-v4/telegram_api.ts
+          deno test cloud/supabase/functions/telegram-webhook-v4/telegram_api.test.ts
+
+      - name: Run Telegram Bot API client tests
+        run: deno test cloud/supabase/functions/telegram-webhook-v4/telegram_api.test.ts
 
       - name: Set up Node.js for backgammon rules tests
         uses: actions/setup-node@v4
@@ -95,3 +100,34 @@ jobs:
 
           print("PediGuardian validation passed")
           PY
+
+  database-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pedi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pedi_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: pedi_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Apply and test flood-control migration
+        run: psql -v ON_ERROR_STOP=1 -f supabase/tests/group_message_rate_limit.integration.sql
+      - name: Test concurrent flood-control requests
+        run: python -m unittest supabase.tests.test_rate_limit_concurrency -v
