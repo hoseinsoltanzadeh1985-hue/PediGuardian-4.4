@@ -1,82 +1,75 @@
-# PediGuardian
+# PediGuardian 4.7.5 — Standard Package
 
-**Current development release: PediGuardian 4.7.5**
+A clean, importable source snapshot of PediGuardian, prepared from the validated development candidate below.
 
-PediGuardian is a Telegram group guardian platform. This repository is the versioned source of truth for the bot, its webhook, worker, Mini Apps, migrations, and release documentation.
+- **Source repository:** https://github.com/hoseinsoltanzadeh1985-hue/PediGuardian-4.4
+- **Source ref:** `fix/4.7.5-audit-remediation`
+- **Source commit:** `e4e56becb9c4038a81207d3aa919a391278c27c8`
+- **Package branch:** `package/4.7.5-standard`
+- **Package type:** standard deployment / self-managed infrastructure
 
-> **Release status (2026-11-24):** 4.7.5 is the latest validated development candidate on `fix/4.7.5-production-hardening`. Its CI checks pass. It is not yet promoted to `main` or deployed to production. Promotion is gated on the production Supabase project/schema being confirmed, Railway secrets being configured, and the game UI/live Telegram smoke tests being completed.
+> **Important release status:** This is a tested development package, not a production release. The source branch CI passed, but the PR is still Draft and this package has not been deployed to a live Telegram bot or production database.
+
+## What is included
+
+- Supabase Edge Function Telegram webhook and Telegram Bot API client.
+- Supabase migrations and SQL integration tests.
+- Python voice worker, Dockerfile, requirements, and worker tests.
+- Telegram Bot API compatibility checker and read-only live smoke-test script.
+- Backgammon rules engine and regression tests.
+- Java release artifacts kept for recovery/reference only.
 
 ## Architecture
 
-- **Guardian Core:** Supabase Edge Functions receive Telegram updates. Keep exactly one production Telegram update owner.
-- **Canonical state and authorization:** Supabase PostgreSQL, including group membership, role hierarchy, permissions, audit records, and durable queues.
-- **Persistent voice worker:** Railway runs the separate PediGuardian voice worker. Railway must not become a second Telegram update poller/webhook owner.
-- **Mini Apps:** HTTPS-hosted Telegram Web Apps for games and utilities.
-- **Game engine:** The 4.7.5 branch includes a deterministic TypeScript backgammon rules engine and regression tests. The rules engine still needs integration into the deployed Backgammon Mini App and end-to-end testing.
-- **Java artifact:** PediGuardian Java 4.7.1 is retained as a development/emergency-recovery artifact; it is not the production update owner while the Supabase webhook is active.
-- **Media scope:** Voice playback is restricted to media sources the operator is authorized to use. Explicit HTTPS host allowlisting and redirect validation are required.
+1. **Telegram updates:** one active Supabase Edge Function webhook owns Telegram updates.
+2. **State and permissions:** Supabase PostgreSQL is the canonical database and authorization store.
+3. **Voice worker:** a separate persistent worker runs the PyTgCalls/FFmpeg integration. The repository includes a Dockerfile under `worker/`.
+4. **Mini Apps:** game interfaces are separate web applications. The included backgammon rules engine is not yet connected to a deployed game UI.
+5. **Java artifacts:** do not start the legacy Java polling artifact while the Supabase webhook owns updates.
 
-## 4.7.5 changes
+## Quick deployment checklist
 
-- Webhook inbox idempotency with per-update UUID leases and safe retry behavior.
-- Group message lock enforcement for links, media, voice, and documents, subject to Telegram delete permissions.
-- Actor/target role-hierarchy checks and Telegram-native permission checks for moderation.
-- Read-only detail views for members, roles, locks, audit events, security permissions, group profile, and settings.
-- Database migrations for group/member/access/audit/voice data, queue leases, member fields, and webhook inbox.
-- Voice queue claims use unique UUID lease tokens; only the current lease holder can complete a job.
-- Voice worker play/pause/resume/stop dispatch using PyTgCalls, with FFmpeg, explicit HTTPS media allowlisting, and redirect validation.
-- Separate liveness/readiness behavior; stale worker heartbeats fail readiness.
-- Deterministic backgammon engine covering bar entry, hits, blocking, bearing off, doubles, mandatory dice usage, and winner detection.
-
-## Verification
-
-Latest recorded CI run for the 4.7.5 candidate: **GitHub Actions run #77 — successful**.
-
-- Deno Edge Function checks
-- Strict TypeScript type-check for the backgammon engine
-- Node.js backgammon regression suite
-- 24 Python worker tests
-- Source/schema contract checks
-
-CI success is not a substitute for production verification. Live Telegram group voice-chat tests, multiplayer game end-to-end tests, and production schema/RLS verification remain required.
-
-## Telegram compatibility and automatic maintenance
-
-- A dedicated Telegram Bot API client is isolated from the webhook handler and covered by unit tests for successful responses, Telegram API errors, HTTP failures, malformed responses, invalid method names, network failures, and secret redaction.
-- A scheduled weekly compatibility workflow compares every Bot API method used by the webhook with the official Telegram Bot API documentation.
-- When `TELEGRAM_BOT_TOKEN` is configured as a GitHub Actions secret, the scheduled workflow also performs non-mutating live checks with `getMe` and `getWebhookInfo`. It does not send group messages or execute moderation actions.
-- Dependabot proposes weekly updates for Python worker dependencies and GitHub Actions. Proposed updates must pass CI and review before merge; production code is never replaced automatically by an unverified dependency update.
-- The PostgreSQL flood-control migration has SQL integration tests for configured limits, per-user/per-group isolation, privilege restrictions, RLS enablement, and concurrent requests.
-
-## Expanded verification
-
-The validation workflow now runs the Telegram API client unit suite, existing backgammon rules regression suite, Python worker tests, and a PostgreSQL service-backed integration suite for the atomic flood limiter. Scheduled Telegram compatibility checks run separately from pull-request CI.
-
-## Production release gates
-
-Before promoting 4.7.5 to `main` or deploying it:
-
-1. Confirm the single canonical Supabase project. The project URL currently documented by the operator is `https://csjmancduvajisunvggs.supabase.co`; the connected Supabase integration has also shown a different project reference. Do not apply migrations until the discrepancy is resolved.
-2. Verify production migration history, tables, constraints, indexes, and RLS policies against the branch migrations.
-3. Configure Railway's protected Variables for the voice worker. Required names include:
+1. Create or select the intended Supabase project. Confirm the project reference and inspect its existing schema and migration history before applying SQL.
+2. Configure Supabase Edge Function secrets securely:
+   - `TELEGRAM_BOT_TOKEN`
+   - `TELEGRAM_WEBHOOK_SECRET`
+   - `BOT_OWNER_ID`
    - `SUPABASE_URL`
    - `SUPABASE_SECRET_KEY` (or the supported legacy `SUPABASE_SERVICE_ROLE_KEY`)
-   - `BOT_TOKEN`
-   - `TG_API_ID`
-   - `TG_API_HASH`
-   - `TG_SESSION_STRING` (or supported `TG_USER_SESSION`)
-   - `MEDIA_ALLOWED_HOSTS` (only approved HTTPS media hosts; an empty allowlist intentionally disables playback)
-   - Any deployment-specific worker variables documented in `worker/`.
-4. Keep secrets out of Git, README files, Mini Apps, issue comments, and chat. Add them only through Railway's protected Variables UI. Rotate any secret that was exposed outside a secure secret manager.
-5. Integrate and test the backgammon engine in the deployed Mini App. Client-submitted scores are not authoritative until server-side match state and score validation exist.
-6. Run controlled Telegram webhook, moderation, queue-lease, voice-worker, and game smoke tests.
-7. Promote to `main` and deploy only after the above gates pass.
+3. Deploy the webhook and the game-center function from the matching paths in this repository. Register exactly one Telegram webhook endpoint. Do not enable a second polling process.
+4. Review and apply migrations in timestamp order only after schema/RLS review and a verified backup.
+5. Deploy `worker/` as a separate persistent service. Its environment template is `worker/.env.example`; set real values only in the host's protected secret/variable store.
+6. Set an explicit `MEDIA_ALLOWED_HOSTS` allowlist before enabling media playback. An empty value intentionally disables playback.
+7. Run the tests below, then perform controlled live tests in a private test group before any production rollout.
 
-## Deployment ownership policy
+## Test commands
 
-- GitHub is the versioned source of code and release documentation.
-- Supabase is the production webhook/database control plane.
-- Railway hosts persistent worker services only.
-- Do not run Java polling while the production Telegram webhook is active.
-- Do not deploy a second Telegram update owner.
-- Never commit service-role or secret API keys.
+From the repository root:
+
+```bash
+node --experimental-strip-types --test cloud/supabase/functions/telegram-webhook-v4/telegram_api.test.ts
+node --experimental-strip-types --test cloud/supabase/functions/game-center-v2/backgammon_engine.test.ts
+python -m unittest discover -s worker -p "test_*.py" -v
+python scripts/check_telegram_api_compat.py
+```
+
+The PostgreSQL integration tests require a disposable PostgreSQL 16 database:
+
+```bash
+psql -v ON_ERROR_STOP=1 -f supabase/tests/group_message_rate_limit.integration.sql
+python supabase/tests/test_rate_limit_concurrency.py
+```
+
+## Current verification and limitations
+
+- CI run #116 passed on source commit `e4e56becb9c4038a81207d3aa919a391278c27c8`.
+- Telegram API unit tests, backgammon regression tests, Python worker tests, PostgreSQL integration tests, and concurrency checks passed in CI.
+- The optional live Telegram smoke test was skipped because the GitHub Actions secret `TELEGRAM_BOT_TOKEN` was not configured. No live bot test is claimed.
+- Captcha, complete subscription-expiry enforcement, AI provider integration, full settings write flows, backgammon Mini App wiring, Air Raider runtime, and live voice-chat verification remain incomplete or require separate validation.
+- No production migration, merge, or deployment is included in this package.
+
+## Security
+
+Never commit bot tokens, Supabase service-role/secret keys, Telegram webhook secrets, API hashes, or user session strings. Never place privileged credentials in a Lovable/Manus browser bundle. Use platform secret stores and rotate anything that has been exposed.
+
+See `docs/PACKAGE-STANDARD.md` for the detailed operator checklist.
