@@ -1,4 +1,4 @@
-"""PediGuardian 4.7.1 voice-only worker.
+"""PediGuardian 4.7.5 voice worker.
 
 The worker owns no Telegram Bot updates. It consumes a Supabase queue, resolves the
 internal group FK to the real Telegram chat id, snapshots the current voice-call
@@ -41,9 +41,11 @@ LOG = logging.getLogger("pedi.voice_worker")
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"), format="%(asctime)s %(levelname)s %(message)s")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-# Current project naming is SUPABASE_SECRET_KEY; retain compatibility with the
-# legacy SUPABASE_SERVICE_ROLE_KEY name used by older worker revisions.
-SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+# New sb_secret keys are opaque API keys, not JWTs. Legacy service_role keys
+# are JWTs and may also be sent as Authorization: Bearer.
+SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+SUPABASE_KEY = SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY
 
 # Readiness is separate from liveness: Railway must not mark a worker healthy
 # until the MTProto client starts and the first Supabase heartbeat succeeds.
@@ -142,7 +144,11 @@ def resolve_safe_source(source: str) -> str:
 
 
 def headers() -> dict[str, str]:
-    return {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
+    result = {"apikey": SUPABASE_KEY, "Content-Type": "application/json"}
+    # Supabase's new sb_secret_* keys must NOT be sent as Bearer tokens.
+    if not SUPABASE_SECRET_KEY and SUPABASE_SERVICE_ROLE_KEY:
+        result["Authorization"] = f"Bearer {SUPABASE_SERVICE_ROLE_KEY}"
+    return result
 
 
 def request(method: str, url: str, *, retry_safe: bool = False, **kwargs) -> requests.Response:

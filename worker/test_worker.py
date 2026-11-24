@@ -145,6 +145,24 @@ class WorkerHttpRetryTests(unittest.TestCase):
         self.assertEqual(mock_request.call_count, 2)
 
 
+class SupabaseAuthHeaderTests(unittest.TestCase):
+    def test_new_secret_key_is_sent_only_as_apikey(self) -> None:
+        with patch.object(worker, "SUPABASE_SECRET_KEY", "sb_secret_test"), patch.object(
+            worker, "SUPABASE_SERVICE_ROLE_KEY", ""
+        ), patch.object(worker, "SUPABASE_KEY", "sb_secret_test"):
+            result = worker.headers()
+        self.assertEqual(result["apikey"], "sb_secret_test")
+        self.assertNotIn("Authorization", result)
+
+    def test_legacy_service_role_key_keeps_bearer_compatibility(self) -> None:
+        with patch.object(worker, "SUPABASE_SECRET_KEY", ""), patch.object(
+            worker, "SUPABASE_SERVICE_ROLE_KEY", "legacy-jwt"
+        ), patch.object(worker, "SUPABASE_KEY", "legacy-jwt"):
+            result = worker.headers()
+        self.assertEqual(result["apikey"], "legacy-jwt")
+        self.assertEqual(result["Authorization"], "Bearer legacy-jwt")
+
+
 class WorkerSourceSafetyTests(unittest.TestCase):
     def test_media_source_requires_allowlist(self) -> None:
         with patch.object(worker, "MEDIA_ALLOWED_HOSTS", set()), patch("worker.socket.getaddrinfo") as resolver:
