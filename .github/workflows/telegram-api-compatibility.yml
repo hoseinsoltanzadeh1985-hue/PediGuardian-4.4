@@ -1,6 +1,10 @@
 name: Telegram API Compatibility
 
 on:
+  push:
+    branches: ["main", "release/**", "fix/**"]
+  pull_request:
+    branches: ["main"]
   workflow_dispatch:
   schedule:
     - cron: "23 6 * * 1"
