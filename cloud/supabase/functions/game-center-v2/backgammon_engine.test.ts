@@ -188,3 +188,33 @@ test("winner is declared only after all 15 checkers are borne off", () => {
   state.off.white = 15;
   assert.equal(winnerOf(state), "white");
 });
+
+
+test("deterministic multi-turn simulation preserves all 15 checkers per player", () => {
+  let state = initialBackgammonState();
+  let player: "white" | "black" = "white";
+  let seed = 20261124;
+  const random = () => {
+    seed = (seed * 48271) % 2147483647;
+    return seed;
+  };
+
+  for (let turn = 0; turn < 600; turn++) {
+    const first = 1 + (random() % 6);
+    const second = 1 + (random() % 6);
+    const sequences = legalTurnSequences(state, player, [first, second]);
+    assert.ok(sequences.length > 0, `no legal sequence on turn ${turn}`);
+    const selected = sequences[random() % sequences.length];
+    state = applyTurnSequence(state, player, selected);
+
+    assert.equal(countCheckers(state, "white"), 15, `white checker count changed on turn ${turn}`);
+    assert.equal(countCheckers(state, "black"), 15, `black checker count changed on turn ${turn}`);
+
+    if (winnerOf(state)) {
+      state = initialBackgammonState();
+      player = "white";
+    } else {
+      player = player === "white" ? "black" : "white";
+    }
+  }
+});
