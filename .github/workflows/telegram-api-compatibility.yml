@@ -1,0 +1,31 @@
+name: Telegram API Compatibility
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 6 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  documentation-compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check methods against official Telegram Bot API documentation
+        run: python scripts/check_telegram_api_compat.py
+
+  live-bot-smoke:
+    if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify Telegram bot identity and webhook registration
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: python scripts/telegram_live_smoke.py
