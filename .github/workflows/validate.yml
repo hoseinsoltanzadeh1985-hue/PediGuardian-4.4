@@ -25,15 +25,14 @@ jobs:
           deno check cloud/supabase/functions/telegram-webhook-v4/index.ts
           deno check cloud/supabase/functions/telegram-webhook-v47/index.ts
           deno check cloud/supabase/functions/telegram-webhook-v4/telegram_api.ts
-          deno test cloud/supabase/functions/telegram-webhook-v4/telegram_api.test.ts
-
-      - name: Run Telegram Bot API client tests
-        run: deno test cloud/supabase/functions/telegram-webhook-v4/telegram_api.test.ts
 
       - name: Set up Node.js for backgammon rules tests
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Run Telegram Bot API client unit tests
+        run: node --experimental-strip-types --test cloud/supabase/functions/telegram-webhook-v4/telegram_api.test.ts
 
       - name: Type-check backgammon rules engine
         run: deno check cloud/supabase/functions/game-center-v2/backgammon_engine.ts
