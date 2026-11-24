@@ -187,10 +187,12 @@ class Store:
         ).json()
 
     def claim(self, request_id: int) -> str | None:
+        # Claiming creates a fresh lease token, so this POST is not safe to retry.
+        # If the response is lost after the RPC commits, the lease will expire and
+        # the queue reclaimer will make the job available again.
         response = request(
             "POST", f"{SUPABASE_URL}/rest/v1/rpc/claim_voice_order_request",
             headers=headers(), json={"p_id": request_id, "p_worker_id": WORKER_ID},
-            retry_safe=True,
         )
         token = response.json()
         return token.strip() if isinstance(token, str) and token.strip() else None
@@ -244,6 +246,19 @@ class Store:
         rows = [{"group_id": group_id, "user_id": int(p["id"]), "display_name": p["display_name"]} for p in people]
         if rows:
             request("POST", f"{self.base}/voice_call_presence_snapshots", headers={**headers(), "Prefer": "return=minimal"}, json=rows)
+
+
+def claim_safely(store: Store, request_id: int) -> str | None:
+    """Skip an ambiguously claimed job without terminating the persistent worker."""
+    try:
+        return store.claim(request_id)
+    except Exception as exc:
+        LOG.warning(
+            "voice request %s claim failed; queue lease recovery will retry it (%s)",
+            request_id,
+            type(exc).__name__,
+        )
+        return None
 
 
 class VoiceClient:
@@ -411,7 +426,7 @@ async def main() -> None:
             store.heartbeat()
             for command in store.pending():
                 request_id = int(command["id"])
-                lease_token = store.claim(request_id)
+                lease_token = claim_safely(store, request_id)
                 if not lease_token:
                     continue
                 group_id = int(command["group_id"])
