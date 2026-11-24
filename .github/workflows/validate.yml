@@ -25,6 +25,17 @@ jobs:
           deno check cloud/supabase/functions/telegram-webhook-v4/index.ts
           deno check cloud/supabase/functions/telegram-webhook-v47/index.ts
 
+      - name: Set up Node.js for backgammon rules tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Type-check backgammon rules engine
+        run: deno check cloud/supabase/functions/game-center-v2/backgammon_engine.ts
+
+      - name: Run backgammon rules regression tests
+        run: node --experimental-strip-types --test cloud/supabase/functions/game-center-v2/backgammon_engine.test.ts
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
