@@ -23,6 +23,10 @@ class AnchorParser(HTMLParser):
         href = values.get("href", "")
         if href.startswith("#"):
             self.anchors.add(href[1:].lower())
+        for attribute in ("id", "name"):
+            value = values.get(attribute, "")
+            if value:
+                self.anchors.add(value.lstrip("#").lower())
 
 
 def used_methods(source: str) -> set[str]:
