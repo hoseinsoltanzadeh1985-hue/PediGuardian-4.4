@@ -26,9 +26,9 @@ export function createTelegramClient({ token, fetchImpl = fetch }: TelegramClien
       body: JSON.stringify(payload),
     });
 
-    let envelope: TelegramEnvelope<T>;
+    let envelope: TelegramEnvelope<any>;
     try {
-      envelope = await response.json() as TelegramEnvelope<T>;
+      envelope = await response.json() as TelegramEnvelope<any>;
     } catch {
       throw new Error(`Telegram API ${method} returned invalid JSON (HTTP ${response.status})`);
     }
