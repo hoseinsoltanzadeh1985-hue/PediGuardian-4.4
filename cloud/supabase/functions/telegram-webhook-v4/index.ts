@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
-const V="4.7.5",BOT=Deno.env.get("TELEGRAM_BOT_TOKEN")||Deno.env.get("BOT_TOKEN")||"",SECRET=Deno.env.get("TELEGRAM_WEBHOOK_SECRET")||"",OWNER=Number(Deno.env.get("BOT_OWNER_ID")||"0"),TG=`https://api.telegram.org/bot${BOT}`,SUPABASE_URL=(Deno.env.get("SUPABASE_URL")||"").replace(/\\/$/, ""),SUPABASE_KEY=Deno.env.get("SUPABASE_SECRET_KEY")||Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")||"",GAME_BASE=SUPABASE_URL?`${SUPABASE_URL}/functions/v1/game-center-v2`:"";
+const V="4.7.5",BOT=Deno.env.get("TELEGRAM_BOT_TOKEN")||Deno.env.get("BOT_TOKEN")||"",SECRET=Deno.env.get("TELEGRAM_WEBHOOK_SECRET")||"",OWNER=Number(Deno.env.get("BOT_OWNER_ID")||"0"),TG=`https://api.telegram.org/bot${BOT}`,SUPABASE_URL=(Deno.env.get("SUPABASE_URL")||"").replace(/\/$/, ""),SUPABASE_KEY=Deno.env.get("SUPABASE_SECRET_KEY")||Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")||"",GAME_BASE=SUPABASE_URL?`${SUPABASE_URL}/functions/v1/game-center-v2`:"";
 const db=createClient(SUPABASE_URL||"https://invalid.supabase.co",SUPABASE_KEY||"missing-server-key");
 const R:Record<string,number>={RESTRICTED:0,MEMBER:1,HELPER:2,MODERATOR:3,ADMIN:4,SENIOR_ADMIN:5,GROUP_OWNER:6,BOT_OWNER:7};
 const P:Record<string,number>={GAME:1,AI:1,WARN:3,MUTE:3,DELETE:3,BAN:4,PIN:4,LOCKS:4,REPORTS:4,ADMINS:5,SETTINGS:5};
