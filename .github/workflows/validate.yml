@@ -6,14 +6,89 @@ on:
   pull_request:
     branches: ["main"]
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Validate repository contents
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Type-check Supabase Edge Functions
         run: |
-          test -f cloud/supabase/functions/telegram-webhook-v47/index.ts
-          grep -q 'const VERSION = "4.7.0"' cloud/supabase/functions/telegram-webhook-v47/index.ts
-          grep -q 'telegram_updates' cloud/supabase/functions/telegram-webhook-v47/index.ts
-          echo 'PediGuardian repository validation passed'
+          deno check cloud/supabase/functions/telegram-webhook-v4/index.ts
+          deno check cloud/supabase/functions/telegram-webhook-v47/index.ts
+
+      - name: Set up Node.js for backgammon rules tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Type-check backgammon rules engine
+        run: deno check cloud/supabase/functions/game-center-v2/backgammon_engine.ts
+
+      - name: Run backgammon rules regression tests
+        run: node --experimental-strip-types --test cloud/supabase/functions/game-center-v2/backgammon_engine.test.ts
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install worker dependencies
+        run: python -m pip install -r worker/requirements.txt
+
+      - name: Run worker readiness tests
+        run: python -m unittest discover -s worker -p "test_*.py" -v
+
+      - name: Validate production source markers
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          checks = {
+              "webhook version": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", 'const V="4.7.5"'),
+              "duplicate update guard": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", 'existing?.status==="PROCESSED"'),
+              "webhook retries while claim is active": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", 'status:503'),
+              "callback query handling": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", "answerCallbackQuery"),
+              "proxy retry response": ("cloud/supabase/functions/telegram-webhook-v47/index.ts", "upstream_unavailable"),
+              "worker readiness": ("worker/worker.py", "status = 200 if ready else 503"),
+              "webhook inbox lease": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", "claim_telegram_update"),
+              "webhook lease token": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", "crypto.randomUUID"),
+              "group message locks": ("cloud/supabase/functions/telegram-webhook-v4/index.ts", "messageLockTypes"),
+              "media allowlist": ("worker/worker.py", "MEDIA_ALLOWED_HOSTS"),
+              "expired queue reclaim": ("worker/worker.py", "reclaim_expired_voice_order_requests"),
+              "redirect validation": ("worker/worker.py", "resolve_safe_source"),
+              "pytgcalls pin": ("worker/requirements.txt", "py-tgcalls==2.1.0"),
+              "webhook inbox migration": ("supabase/migrations/20261123150000_guardian_schema_and_inbox_hardening.sql", "claim_telegram_update"),
+              "restricted RPC execute": ("supabase/migrations/20261123150000_guardian_schema_and_inbox_hardening.sql", "revoke execute on function public.claim_telegram_update"),
+              "voice queue lease token": ("worker/worker.py", "lease_token=eq.{lease_token}"),
+              "voice queue UUID generation": ("supabase/migrations/20261123160000_voice_queue_lease_tokens.sql", "pg_catalog.gen_random_uuid()"),
+              "voice queue UUID RPC": ("supabase/migrations/20261123160000_voice_queue_lease_tokens.sql", "returns uuid"),
+              "worker recovers from queue claim failure": ("worker/worker.py", "lease_token = claim_safely(store, request_id)"),
+          }
+
+          for label, (filename, marker) in checks.items():
+              content = Path(filename).read_text(encoding="utf-8")
+              if marker not in content:
+                  raise SystemExit(f"Missing required marker: {label} ({filename})")
+              print(f"OK: {label}")
+
+          webhook = Path("cloud/supabase/functions/telegram-webhook-v4/index.ts").read_text(encoding="utf-8")
+          ack_start = webhook.find("const ack=async()=>")
+          ack_end = webhook.find("};const q=u.callback_query", ack_start)
+          if ack_start < 0 or ack_end < 0:
+              raise SystemExit("Missing webhook acknowledgement function")
+          ack_body = webhook[ack_start:ack_end]
+          if "return await ack()" in ack_body or "return reply()" not in ack_body:
+              raise SystemExit("Webhook acknowledgement must return the HTTP reply without recursion")
+          print("OK: webhook acknowledgement is non-recursive")
+
+          print("PediGuardian validation passed")
+          PY

@@ -1,3 +1,4 @@
 pyrogram>=2.0,<3
 tgcrypto>=1.2,<2
 requests>=2.31,<3
+py-tgcalls==2.1.0
