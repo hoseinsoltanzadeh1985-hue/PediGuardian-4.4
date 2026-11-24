@@ -137,11 +137,11 @@ test("all possible dice must be used when two sequential moves are available", (
 
 test("the higher die is mandatory when only one of two different dice can be used", () => {
   const state = emptyState();
-  state.points[20] = 1;
-  const sequences = legalTurnSequences(state, "white", [3, 5]);
+  state.points[23] = 1;
+  const sequences = legalTurnSequences(state, "white", [1, 6]);
   assert.ok(sequences.length > 0);
   assert.ok(sequences.every((sequence) => sequence.length === 1));
-  assert.ok(sequences.every((sequence) => sequence[0].die === 5));
+  assert.ok(sequences.every((sequence) => sequence[0].die === 6));
 });
 
 test("doubles grant four moves when all four can be played", () => {
