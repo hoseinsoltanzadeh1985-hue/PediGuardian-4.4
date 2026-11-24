@@ -1,75 +1,60 @@
-# Manus + Lovable integration architecture
+# Manus Server + Lovable UI — PediGuardian architecture
 
 ## Goal
 
-Create an operator dashboard and optional web control panel without replacing the existing Telegram bot backend or introducing a second source of truth.
+Use a persistent Manus Cloud Computer for the existing voice worker and use Lovable to build the operator dashboard, without changing the Telegram webhook owner or creating a second database.
 
-## System boundaries
+## System map
 
 ```text
-Telegram users and groups
-          |
-          v
+Telegram users/groups
+       |
+       v
 Telegram Bot API
-          |
-          v
-Supabase Edge Function  <---- exactly one Telegram webhook owner
-          |
-          +------> Supabase PostgreSQL (canonical state + RLS)
-          |
-          +------> queued voice work
-                          |
-                          v
-                 Persistent voice worker
-                 (Python + PyTgCalls + FFmpeg)
+       |
+       v
+Supabase Edge Function  <---- sole Telegram webhook/update owner
+       |
+       +----> Supabase PostgreSQL (canonical state, RLS, audit)
+       |
+       +----> voice queue
+                  |
+                  v
+        Manus Cloud Computer
+        Python worker + PyTgCalls + FFmpeg
+        persistent process; outbound Supabase connection
 
-Manus: build/review the operator portal or auxiliary web app
-Lovable: build the responsive Persian RTL UI and connect to the
-         already-confirmed Supabase project through safe access paths
-GitHub: versioned code, CI, review, and package source
+Lovable: Persian RTL admin UI
+       |
+       +----> authenticated, RLS-protected Supabase access
+GitHub: source, CI, tests, version history
 ```
 
 ## Responsibilities
 
-### Existing Supabase backend
+### Supabase
 
-Keep the webhook, database, access-control checks, and privileged RPCs here unless a separately reviewed migration changes the architecture. The webhook must keep its bot token, webhook secret, and Supabase secret on the server.
+Keep the current webhook, database, privileged RPCs, authorization, and queue here. The bot token, webhook secret, and Supabase secret remain server-side. Use exactly one Telegram webhook and do not start legacy Java polling while the webhook is active.
 
-### Voice worker
+### Manus Cloud Computer
 
-Keep it on a persistent host that supports the included Dockerfile, Python dependencies, FFmpeg, PyTgCalls, HTTPS health checks, and protected environment variables. Do not assume a static frontend host can run this worker.
+The worker in `worker/` is a persistent Python service. The included Dockerfile installs Python dependencies and FFmpeg. A Manus Cloud Computer is a persistent Ubuntu server intended to keep applications and bots running outside active Manus sessions. Use it as the worker host only after confirming the account has this resource and reviewing its current charges.
 
-### Manus
-
-Use Manus to inspect this repository and generate an operator portal or supporting web application. Manus can build and publish web applications, but do not let it create a competing Telegram webhook, an independent role database, or a second copy of production records.
+The worker connects outbound to Supabase to claim queue work and write heartbeats. Its HTTP health endpoint listens on port 8787 by default. Keep that port private unless there is a clear monitoring requirement and a firewall rule that restricts access.
 
 ### Lovable
 
-Use Lovable for UI generation and preview. Connect it to the existing Supabase project only after the canonical project reference is confirmed. The frontend must use public/publishable credentials and authenticated RLS-protected access. Never put privileged secrets in browser code.
+Build the dashboard UI, not a second bot. Connect it to the confirmed Supabase project using public/publishable client credentials and authenticated RLS-protected reads. Do not expose service-role/secret keys, bot tokens, webhook secrets, Telegram API hashes, or user session strings. Start read-only.
 
-## Dashboard access policy
+## Dashboard access model
 
-Start with a read-only dashboard. Before enabling writes:
+Before enabling any browser data access, verify the actual production schema and RLS. If current policies do not allow safe authenticated reads, do not relax them. Instead propose narrowly scoped server-side RPCs/views for review. Authorization for every write must be enforced by the database/server and audited; hiding a button is not authorization.
 
-1. Inspect the real production schema and RLS.
-2. Define which authenticated dashboard users may see which groups.
-3. Implement narrowly scoped server-side RPCs for required writes.
-4. Enforce authorization in the database/server, not by hiding buttons.
-5. Add audit events for every privileged action.
-6. Add tests for owner/admin boundaries, cross-group isolation, and revoked roles.
+## What this package does not do
 
-Do not guess column names from the UI, and do not relax RLS to make a page work.
+- It does not deploy or provision a Manus Cloud Computer.
+- It does not create a Lovable project or dashboard automatically.
+- It does not move the Telegram webhook off Supabase.
+- It does not apply database migrations or change production secrets.
+- It does not certify live Telegram group, voice-chat, or game functionality.
 
-## Deployment gates
-
-- Use a separate development Supabase project and private Telegram test group.
-- Keep exactly one active webhook for the bot.
-- Verify bot identity and webhook URL with the non-mutating smoke test.
-- Verify database migrations and RLS before any writes.
-- Verify the voice worker's readiness and queue lease behavior.
-- Test group commands and callbacks with test accounts.
-- Do not deploy or migrate production until an explicit release review has passed.
-
-## What is not included in this package
-
-There is no completed Manus portal or Lovable frontend in the repository. These are build instructions for creating them as separate projects. The Telegram bot runtime and voice worker remain separate server-side services.
