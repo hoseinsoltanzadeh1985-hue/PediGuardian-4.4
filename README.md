@@ -1,44 +1,86 @@
-# PediGuardian 4.7.5 — Manus Server + Lovable UI Package
+# PediGuardian 4.7.5 — canonical source
 
-An alternative deployment package for running the persistent voice worker on a Manus Cloud Computer while building the Persian RTL management interface in Lovable.
+This branch is the cleaned, canonical source layout for PediGuardian 4.7.5.
 
-- **Source repository:** https://github.com/hoseinsoltanzadeh1985-hue/PediGuardian-4.4
-- **Source ref:** `fix/4.7.5-audit-remediation`
-- **Source commit:** `e4e56becb9c4038a81207d3aa919a391278c27c8`
-- **Package branch:** `package/4.7.5-manus-lovable`
-- **Target arrangement:** Supabase (Telegram webhook + PostgreSQL) / Manus Cloud Computer (persistent voice worker) / Lovable (web dashboard UI)
+- Canonical branch: `cleanup/4.7.5-canonical`
+- Runtime: Supabase Edge Functions + Supabase PostgreSQL + persistent Python voice worker
+- Operator UI: Lovable dashboard specification
+- Optional worker host: Railway or Manus Cloud Computer
+- Base application source: `fix/4.7.5-audit-remediation`
+- Worker security fixes: Supabase secret-key header handling and regression tests are included.
 
-> **Important:** This is not a completed Manus deployment or Lovable dashboard. It is the source package plus deployment instructions and build prompts. The Cloud Computer must be provisioned in your Manus account, and the Lovable UI must be generated and tested separately. No account, server, database or deployment was changed by preparing this package.
+## Architecture
 
-## Target architecture
+1. **Telegram webhook:** Supabase Edge Function is the only owner of Telegram updates.
+2. **Database:** Supabase PostgreSQL is the canonical store for groups, members, permissions, moderation state, audit events, and voice queue.
+3. **Voice worker:** `worker/` contains the persistent Python worker, Dockerfile, dependency pins, and tests.
+4. **Operator UI:** Lovable is a dashboard only; it must use authenticated, RLS-protected access.
+5. **Hosting:** The worker can run on Railway or a persistent Manus Cloud Computer. Hosting is not provisioned by this repository.
 
-1. **Supabase Edge Function:** remains the only Telegram webhook/update owner.
-2. **Supabase PostgreSQL:** remains the canonical store for groups, members, roles, moderation state, audit events, and voice queue.
-3. **Manus Cloud Computer:** can host the persistent Python voice worker (PyTgCalls + FFmpeg) on its Ubuntu server, using the included `worker/Dockerfile`.
-4. **Lovable:** builds the responsive Persian RTL operator dashboard and connects to the confirmed Supabase project through authenticated, RLS-protected access.
-5. **GitHub:** holds the source, tests, and deployment instructions.
+Do not start the legacy Java polling artifact or configure a second Telegram webhook. Do not create a second database or duplicate role/queue tables.
 
-Do not move the Telegram webhook to Manus or create another bot polling process. This prevents two services from competing for the same Telegram updates.
+## Repository layout
 
-## What to do
+- `.github/workflows/` — current validation and Telegram API compatibility workflows
+- `cloud/supabase/functions/` — Telegram webhook and game engine functions
+- `supabase/migrations/` — ordered database migration history
+- `supabase/tests/` — SQL and concurrency integration tests
+- `worker/` — production worker source, Dockerfile, dependency pins, and regression tests
+- `scripts/` — API compatibility and read-only live smoke checks
+- `docs/` — deployment, architecture, Manus, and Lovable handoff documentation
 
-1. Create a separate GitHub repository from this ZIP so your experiments remain isolated from the original repository.
-2. In Manus, create/use a persistent Cloud Computer and follow `docs/MANUS-CLOUD-COMPUTER.md` to host the worker.
-3. In Lovable, create the dashboard from `docs/LOVABLE-PROMPT.md`, then connect it only to the verified existing Supabase project.
-4. Start with read-only group/member/role/lock/audit pages. Do not permit writes until the schema and RLS policy have been verified.
-5. Test against a separate development Supabase project and a private Telegram test group before any production rollout.
+Legacy Java release artifacts and 4.7.1/4.7.3/4.7.4 build workflows have been removed from this canonical branch. Historical branches and Git history remain available for recovery; they were not deleted.
 
-## Important limitations
+## Required server-side configuration
 
-- The current source commit passed CI run #116, but the live Telegram smoke test was skipped because the CI token secret was not configured.
-- A Cloud Computer is a persistent server resource in Manus and may have separate usage/subscription charges. Check your account's current terms before provisioning it.
-- This repository does not include the generated Lovable dashboard.
-- Captcha, complete subscription-expiry enforcement, AI integration, full settings writes, backgammon UI binding, Air Raider runtime, and live Telegram voice-chat tests remain incomplete or unverified.
-- No production migration, merge, or deployment is included.
+The webhook uses these server-side variables:
 
-## Handoff documents
+- `TELEGRAM_BOT_TOKEN` (compatibility fallback: `BOT_TOKEN`)
+- `TELEGRAM_WEBHOOK_SECRET`
+- `BOT_OWNER_ID`
+- `SUPABASE_URL`
+- `SUPABASE_SECRET_KEY` (legacy compatibility fallback: `SUPABASE_SERVICE_ROLE_KEY`)
 
-- `docs/MANUS-CLOUD-COMPUTER.md` — worker deployment on Manus Cloud Computer.
-- `docs/MANUS-PROMPT.md` — safe Manus implementation prompt.
-- `docs/LOVABLE-PROMPT.md` — Lovable dashboard prompt.
-- `docs/PLATFORM-ARCHITECTURE.md` — architecture and security boundaries.
+The worker template is `worker/.env.example`. It includes the bot token, Supabase secret, Telegram API ID/hash, user session string, and optional media allowlist. Store real values only in Railway/Manus protected environment variables or Supabase Function Secrets. Never commit secrets or paste them into chat.
+
+## Safe rollout sequence
+
+1. Confirm the exact existing Supabase project reference before changing secrets or deploying functions.
+2. Compare all files in `supabase/migrations/` with the target database migration history and actual schema.
+3. Back up a development database and apply reviewed migrations to development first.
+4. Deploy the Edge Functions from this repository only after confirming migration compatibility.
+5. Configure one Telegram webhook and verify it with the read-only smoke script.
+6. Deploy `worker/` as one persistent service with protected variables.
+7. Test in a private Telegram group and development database before production rollout.
+
+Do not apply migrations to production until the Supabase project identity and migration history are confirmed.
+
+## Tests
+
+Run from the repository root:
+
+```bash
+node --experimental-strip-types --test cloud/supabase/functions/telegram-webhook-v4/telegram_api.test.ts
+node --experimental-strip-types --test cloud/supabase/functions/game-center-v2/backgammon_engine.test.ts
+python -m unittest discover -s worker -p "test_*.py" -v
+python scripts/check_telegram_api_compat.py
+```
+
+PostgreSQL integration tests use a disposable PostgreSQL 16 instance:
+
+```bash
+psql -v ON_ERROR_STOP=1 -f supabase/tests/group_message_rate_limit.integration.sql
+python supabase/tests/test_rate_limit_concurrency.py
+```
+
+## Known limitations
+
+- Live Telegram smoke tests require a bot token secret in the CI environment; without it, that job is skipped.
+- Captcha and complete subscription-expiry enforcement are not complete.
+- AI provider integration and full settings write handlers are not complete.
+- The backgammon engine has tests but is not fully wired to a deployed game UI.
+- Air Raider UI/runtime is not verified.
+- End-to-end Telegram voice-chat tests remain outstanding.
+- No production migration, deployment, or merge is performed by this repository cleanup.
+
+See `docs/PLATFORM-ARCHITECTURE.md`, `docs/MANUS-CLOUD-COMPUTER.md`, `docs/MANUS-PROMPT.md`, and `docs/LOVABLE-PROMPT.md` for deployment boundaries and handoff instructions.
