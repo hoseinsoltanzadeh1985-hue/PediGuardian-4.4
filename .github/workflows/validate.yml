@@ -60,6 +60,7 @@ jobs:
               "voice queue lease token": ("worker/worker.py", "lease_token=eq.{lease_token}"),
               "voice queue UUID generation": ("supabase/migrations/20261123160000_voice_queue_lease_tokens.sql", "pg_catalog.gen_random_uuid()"),
               "voice queue UUID RPC": ("supabase/migrations/20261123160000_voice_queue_lease_tokens.sql", "returns uuid"),
+              "worker recovers from queue claim failure": ("worker/worker.py", "lease_token = claim_safely(store, request_id)"),
           }
 
           for label, (filename, marker) in checks.items():
