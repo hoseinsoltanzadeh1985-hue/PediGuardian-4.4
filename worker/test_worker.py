@@ -185,7 +185,7 @@ class WorkerQueueLeaseTests(unittest.TestCase):
         self.assertIn("status=eq.PENDING", mock_request.call_args_list[1].args[1])
 
     @patch("worker.request")
-    def test_claim_returns_unique_lease_token(self, mock_request) -> None:
+    def test_claim_returns_unique_lease_token_without_retry(self, mock_request) -> None:
         response = Mock()
         response.json.return_value = "test-lease-token"
         mock_request.return_value = response
@@ -193,7 +193,19 @@ class WorkerQueueLeaseTests(unittest.TestCase):
         args, kwargs = mock_request.call_args
         self.assertEqual(args[0], "POST")
         self.assertIn("claim_voice_order_request", args[1])
-        self.assertTrue(kwargs["retry_safe"])
+        self.assertNotIn("retry_safe", kwargs)
+
+    @patch.object(worker.Store, "claim", side_effect=requests.ConnectionError("temporary"))
+    def test_claim_safely_contains_ambiguous_claim_failure(self, mock_claim) -> None:
+        store = worker.Store()
+        self.assertIsNone(worker.claim_safely(store, 9))
+        mock_claim.assert_called_once_with(9)
+
+    @patch.object(worker.Store, "claim", return_value="test-lease-token")
+    def test_claim_safely_returns_lease_token(self, mock_claim) -> None:
+        store = worker.Store()
+        self.assertEqual(worker.claim_safely(store, 9), "test-lease-token")
+        mock_claim.assert_called_once_with(9)
 
     @patch("worker.request")
     def test_completion_is_scoped_to_exact_current_lease_token(self, mock_request) -> None:
