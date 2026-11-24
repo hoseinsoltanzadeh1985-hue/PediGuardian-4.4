@@ -21,11 +21,14 @@ jobs:
         run: python scripts/check_telegram_api_compat.py
 
   live-bot-smoke:
-    if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
     runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Verify Telegram bot identity and webhook registration
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        if: ${{ env.TELEGRAM_BOT_TOKEN != '' }}
         run: python scripts/telegram_live_smoke.py
+      - name: Report skipped live check when no token is configured
+        if: ${{ env.TELEGRAM_BOT_TOKEN == '' }}
+        run: echo "TELEGRAM_BOT_TOKEN is not configured; live smoke test skipped."
