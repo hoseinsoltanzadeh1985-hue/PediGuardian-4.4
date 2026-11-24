@@ -20,7 +20,7 @@ test("client rejects a missing token before making network requests", () => {
 test("successful Bot API response returns result and sends JSON POST", async () => {
   const { fetchImpl, calls } = fakeFetch(() => Response.json({ ok: true, result: { id: 42, is_bot: true } }));
   const tg = createTelegramClient({ token: "test-token", fetchImpl });
-  const result = await tg<{ id: number; is_bot: boolean }>("getMe", {});
+  const result = await tg("getMe", {}) as { id: number; is_bot: boolean };
   assert.deepEqual(result, { id: 42, is_bot: true });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://api.telegram.org/bottest-token/getMe");
