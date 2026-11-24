@@ -7,6 +7,7 @@ import {
   initialBackgammonState,
   legalMovesForDie,
   legalTurnSequences,
+  winnerOf,
   type BackgammonState,
 } from "./backgammon_engine.ts";
 
@@ -183,7 +184,7 @@ test("illegal moves are rejected without changing the source board", () => {
 test("winner is declared only after all 15 checkers are borne off", () => {
   const state = emptyState();
   state.off.white = 14;
-  assert.equal((await import("./backgammon_engine.ts")).winnerOf(state), null);
+  assert.equal(winnerOf(state), null);
   state.off.white = 15;
-  assert.equal((await import("./backgammon_engine.ts")).winnerOf(state), "white");
+  assert.equal(winnerOf(state), "white");
 });
