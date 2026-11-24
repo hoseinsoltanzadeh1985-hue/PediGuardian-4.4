@@ -1,50 +1,44 @@
-# PediGuardian 4.7.5 — Manus + Lovable Package
+# PediGuardian 4.7.5 — Manus Server + Lovable UI Package
 
-A platform-integration package for building a web control panel around the existing PediGuardian Telegram backend.
+An alternative deployment package for running the persistent voice worker on a Manus Cloud Computer while building the Persian RTL management interface in Lovable.
 
 - **Source repository:** https://github.com/hoseinsoltanzadeh1985-hue/PediGuardian-4.4
 - **Source ref:** `fix/4.7.5-audit-remediation`
 - **Source commit:** `e4e56becb9c4038a81207d3aa919a391278c27c8`
 - **Package branch:** `package/4.7.5-manus-lovable`
-- **Target workflow:** Manus for assisted full-stack/dashboard work; Lovable for the responsive Persian RTL operator UI; existing Supabase remains the canonical bot backend.
+- **Target arrangement:** Supabase (Telegram webhook + PostgreSQL) / Manus Cloud Computer (persistent voice worker) / Lovable (web dashboard UI)
 
-> **Important:** This repository does not contain a finished React/Lovable dashboard, and it is not a one-click Manus deployment package. It contains the existing bot backend plus an integration brief and ready-to-use prompts. The dashboard must be generated and then tested against the real schema and RLS policies.
+> **Important:** This is not a completed Manus deployment or Lovable dashboard. It is the source package plus deployment instructions and build prompts. The Cloud Computer must be provisioned in your Manus account, and the Lovable UI must be generated and tested separately. No account, server, database or deployment was changed by preparing this package.
 
-## Recommended separation of responsibilities
+## Target architecture
 
-- **Telegram bot runtime:** keep the current Supabase Edge Function as the single Telegram webhook owner.
-- **Database and access control:** keep the confirmed Supabase project as the single source of truth. Do not create a parallel database or duplicate permission system in Manus/Lovable.
-- **Persistent voice worker:** keep the separate worker on a persistent host that supports Python, FFmpeg, PyTgCalls, health checks, and protected environment variables. The included worker Dockerfile is the starting point.
-- **Manus:** use it to build/review the operator portal or auxiliary full-stack web app and to help deploy that portal. Do not ask it to replace the Telegram webhook or silently migrate production data.
-- **Lovable:** use it to build the responsive UI and connect it to the existing Supabase project. Its browser code must use only the public/publishable key and authenticated, RLS-protected access.
-- **GitHub:** keep code and review history here. Treat this package branch as a snapshot, not as the live production deployment.
+1. **Supabase Edge Function:** remains the only Telegram webhook/update owner.
+2. **Supabase PostgreSQL:** remains the canonical store for groups, members, roles, moderation state, audit events, and voice queue.
+3. **Manus Cloud Computer:** can host the persistent Python voice worker (PyTgCalls + FFmpeg) on its Ubuntu server, using the included `worker/Dockerfile`.
+4. **Lovable:** builds the responsive Persian RTL operator dashboard and connects to the confirmed Supabase project through authenticated, RLS-protected access.
+5. **GitHub:** holds the source, tests, and deployment instructions.
 
-## Why this split matters
+Do not move the Telegram webhook to Manus or create another bot polling process. This prevents two services from competing for the same Telegram updates.
 
-The bot webhook uses server-side credentials and handles Telegram updates. A browser dashboard must never receive the Telegram bot token, Supabase secret/service-role key, Telegram API hash, or user session string. Lovable supports connecting an app to Supabase and using its database and Edge Functions; Manus supports building and publishing web apps. Those platform features do not mean that this existing webhook/worker can be deployed unchanged as a frontend-only project.
+## What to do
 
-## Recommended workflow
+1. Create a separate GitHub repository from this ZIP so your experiments remain isolated from the original repository.
+2. In Manus, create/use a persistent Cloud Computer and follow `docs/MANUS-CLOUD-COMPUTER.md` to host the worker.
+3. In Lovable, create the dashboard from `docs/LOVABLE-PROMPT.md`, then connect it only to the verified existing Supabase project.
+4. Start with read-only group/member/role/lock/audit pages. Do not permit writes until the schema and RLS policy have been verified.
+5. Test against a separate development Supabase project and a private Telegram test group before any production rollout.
 
-1. Import this ZIP into a **new GitHub repository** so experiments do not affect the original source repository.
-2. In Manus, connect that new repository and ask it to inspect the code and create an operator dashboard only. Use the prompt in `docs/MANUS-PROMPT.md`.
-3. In Lovable, create the UI project and connect the already-confirmed Supabase backend. Use `docs/LOVABLE-PROMPT.md`.
-4. Start with read-only pages (group profile, members/roles, locks, audit history, worker health). Do not enable database writes until every table, column, RPC, authentication rule, and RLS policy has been checked.
-5. Keep the webhook and voice worker on their existing server-side deployment paths. Do not let Manus/Lovable create a second Telegram webhook or duplicate the bot's update polling.
-6. Test with a separate Supabase development project and private Telegram test group. Promote only after explicit review and live smoke tests.
+## Important limitations
 
-## Current verification and limitations
+- The current source commit passed CI run #116, but the live Telegram smoke test was skipped because the CI token secret was not configured.
+- A Cloud Computer is a persistent server resource in Manus and may have separate usage/subscription charges. Check your account's current terms before provisioning it.
+- This repository does not include the generated Lovable dashboard.
+- Captcha, complete subscription-expiry enforcement, AI integration, full settings writes, backgammon UI binding, Air Raider runtime, and live Telegram voice-chat tests remain incomplete or unverified.
+- No production migration, merge, or deployment is included.
 
-- Source commit `e4e56becb9c4038a81207d3aa919a391278c27c8` passed CI run #116.
-- The source package has no completed Lovable dashboard or Manus WebDev application yet.
-- Live Telegram smoke testing was skipped because the CI token secret was absent.
-- Production DB schema/RLS, live voice-chat, bot commands, subscription expiry, Captcha, AI, and game UI integrations are not certified as production-ready.
-- No production deployment, database migration, PR merge, or credential transfer was performed.
+## Handoff documents
 
-## Files for platform handoff
-
-- `docs/MANUS-PROMPT.md` — scoped Manus build prompt and guardrails.
-- `docs/LOVABLE-PROMPT.md` — Lovable UI prompt with Persian RTL and security requirements.
-- `docs/PLATFORM-ARCHITECTURE.md` — responsibility map and deployment gates.
-- `worker/.env.example` — names of voice-worker variables; use real values only in protected platform settings.
-
-See `docs/PLATFORM-ARCHITECTURE.md` before connecting any live service.
+- `docs/MANUS-CLOUD-COMPUTER.md` — worker deployment on Manus Cloud Computer.
+- `docs/MANUS-PROMPT.md` — safe Manus implementation prompt.
+- `docs/LOVABLE-PROMPT.md` — Lovable dashboard prompt.
+- `docs/PLATFORM-ARCHITECTURE.md` — architecture and security boundaries.
