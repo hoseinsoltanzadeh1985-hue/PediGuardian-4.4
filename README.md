@@ -40,6 +40,18 @@ Latest recorded CI run for the 4.7.5 candidate: **GitHub Actions run #77 — suc
 
 CI success is not a substitute for production verification. Live Telegram group voice-chat tests, multiplayer game end-to-end tests, and production schema/RLS verification remain required.
 
+## Telegram compatibility and automatic maintenance
+
+- A dedicated Telegram Bot API client is isolated from the webhook handler and covered by unit tests for successful responses, Telegram API errors, HTTP failures, malformed responses, invalid method names, network failures, and secret redaction.
+- A scheduled weekly compatibility workflow compares every Bot API method used by the webhook with the official Telegram Bot API documentation.
+- When `TELEGRAM_BOT_TOKEN` is configured as a GitHub Actions secret, the scheduled workflow also performs non-mutating live checks with `getMe` and `getWebhookInfo`. It does not send group messages or execute moderation actions.
+- Dependabot proposes weekly updates for Python worker dependencies and GitHub Actions. Proposed updates must pass CI and review before merge; production code is never replaced automatically by an unverified dependency update.
+- The PostgreSQL flood-control migration has SQL integration tests for configured limits, per-user/per-group isolation, privilege restrictions, RLS enablement, and concurrent requests.
+
+## Expanded verification
+
+The validation workflow now runs the Telegram API client unit suite, existing backgammon rules regression suite, Python worker tests, and a PostgreSQL service-backed integration suite for the atomic flood limiter. Scheduled Telegram compatibility checks run separately from pull-request CI.
+
 ## Production release gates
 
 Before promoting 4.7.5 to `main` or deploying it:
